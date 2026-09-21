@@ -11,3 +11,5 @@ log = { version = "0.4.34", features = [
 ] }
 icu_provider = { version = "2.3.1", features = ["logging"] }
 bevy_rand = { version = "0.15.2", features = ["wyrand"] }
+bevy_prng = "0.15.2"
+rand_core = "0.10.1"

@@ -1,5 +1,5 @@
 use bevy_prng::WyRand;
-use rand_core::RngCore;
+use rand_core::Rng;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrominoKind {
@@ -15,7 +15,6 @@ impl TrominoKind {
             TrominoKind::Corner
         }
     }
-
 
     /// 各種別の可能な回転数
     pub fn rotation_count(&self) -> usize {

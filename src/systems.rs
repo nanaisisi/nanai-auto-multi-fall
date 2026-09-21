@@ -1,11 +1,11 @@
-use bevy::prelude::*;
-use bevy_prng::WyRand;
-use bevy_rand::prelude::GlobalRng;
 use crate::ai::{AutoAi, PredictedPlacement};
-use crate::board::{lane_x_range, GlobalBoard};
+use crate::board::{GlobalBoard, lane_x_range};
 use crate::config::*;
 use crate::game::*;
 use crate::tromino::TrominoKind;
+use bevy::prelude::*;
+use bevy_prng::WyRand;
+use bevy_rand::prelude::GlobalRng;
 
 /// 新規トミノのスポーンシステム（予測型連携AI対応）
 pub fn spawn_tromino_system(
@@ -63,21 +63,17 @@ pub fn spawn_tromino_system(
 
         let kind = TrominoKind::random_from_rng(&mut rng);
 
-        let best_move = match AutoAi::find_best_move(
-            &board,
-            lane.id,
-            &kind,
-            &predicted_others,
-            &air_obstacles,
-        ) {
-            Some(m) => m,
-            None => {
-                commands.entity(lane_entity).insert(LaneSpawnCooldown {
-                    timer: Timer::from_seconds(0.2, TimerMode::Once),
-                });
-                continue;
-            }
-        };
+        let best_move =
+            match AutoAi::find_best_move(&board, lane.id, &kind, &predicted_others, &air_obstacles)
+            {
+                Some(m) => m,
+                None => {
+                    commands.entity(lane_entity).insert(LaneSpawnCooldown {
+                        timer: Timer::from_seconds(0.2, TimerMode::Once),
+                    });
+                    continue;
+                }
+            };
 
         predicted_others.push(PredictedPlacement {
             player_id: lane.id,
@@ -281,6 +277,8 @@ pub fn falling_tromino_system(
 
         let updated_int_x = falling.current_x.round() as i32;
 
+        let mut bottom_blocked = false;
+
         // 3. 下降処理（直下が塞がっている場合は即座に接地とみなす）
         falling.fall_timer.tick(time.delta());
         if falling.fall_timer.just_finished() {
@@ -296,6 +294,7 @@ pub fn falling_tromino_system(
             };
 
             if bottom_hit_board {
+                bottom_blocked = true;
                 falling.landing_y = current_int_y;
                 falling.current_y = current_int_y as f32;
             } else {
@@ -313,10 +312,12 @@ pub fn falling_tromino_system(
                     })
                 };
 
-                if !bottom_hit_other {
-                    if falling.current_y > falling.landing_y as f32 {
-                        falling.current_y = (falling.current_y - 1.0).max(falling.landing_y as f32);
-                    }
+                if bottom_hit_other {
+                    bottom_blocked = true;
+                    falling.landing_y = current_int_y;
+                    falling.current_y = current_int_y as f32;
+                } else if falling.current_y > falling.landing_y as f32 {
+                    falling.current_y = (falling.current_y - 1.0).max(falling.landing_y as f32);
                 }
             }
         }
@@ -326,18 +327,15 @@ pub fn falling_tromino_system(
         let arrived_x = (falling.current_x - falling.target_x as f32).abs() < 0.15;
         let arrived_rotation = falling.current_rotation == falling.target_rotation;
 
-        if arrived_landing && arrived_x && arrived_rotation {
+        // 目標到達、または真下が塞がってこれ以上落ちられない場合はロック進行
+        if (arrived_landing && arrived_x && arrived_rotation) || bottom_blocked {
             falling.lock_timer.tick(time.delta());
             if falling.lock_timer.is_finished() {
                 let lock_x = falling.current_x.round() as i32;
                 let lock_y = falling.current_y.round() as i32;
 
-                let safe_to_lock = board.can_place(
-                    &falling.kind,
-                    falling.current_rotation,
-                    lock_x,
-                    lock_y,
-                );
+                let safe_to_lock =
+                    board.can_place(&falling.kind, falling.current_rotation, lock_x, lock_y);
 
                 if safe_to_lock {
                     let locked = board.lock_tromino(
@@ -355,8 +353,10 @@ pub fn falling_tromino_system(
 
                 for (lane_entity, lane) in lane_query.iter() {
                     if lane.id == falling.lane_id {
+                        // ランダムな揺らぎ（0.05〜0.25s）をつけて同調スポーンによる空中衝突を分散
+                        let delay = settings.spawn_delay + (falling.lane_id as f32 * 0.04);
                         commands.entity(lane_entity).insert(LaneSpawnCooldown {
-                            timer: Timer::from_seconds(settings.spawn_delay, TimerMode::Once),
+                            timer: Timer::from_seconds(delay, TimerMode::Once),
                         });
                         break;
                     }
