@@ -1,0 +1,68 @@
+#rustup toolchain install nightly
+[toolchain]
+channel = "nightly"
+
+#"-Zlinker-features=-lld"
+
+
+#cargo binstall sccache= "sccache"
+#scoop install sccache
+[build]
+rustc-wrapper = "sccache"
+
+#rustup component add rustc-codegen-cranelift-preview --toolchain nightly
+[unstable]
+codegen-backend = true
+
+[profile.dev]
+codegen-backend = "cranelift"
+
+[profile.dev.package."*"]
+codegen-backend = "llvm"
+
+#windows
+
+#rustup component add llvm-tools-preview --toolchain nightly
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld.exe"
+rustflags = [
+    #nightly
+    "-Zshare-generics=y",
+]
+
+#linux
+
+#sudo apt-fast install mold clang
+[target.x86_64-unknown-linux-gnu]
+linker = "clang"
+rustflags = [
+    #nightly
+    "-Zshare-generics=y",
+    "-C",
+    "link-arg=-fuse-ld=mold",
+]
+
+#linux aarch64
+#cargo binstall sccache
+
+#sudo apt-fast install mold clang
+[target.aarch64-unknown-linux-gnu]
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
+#lld(not mold)
+#sudo apt-fast install lld clang
+#[target.x86_64-unknown-linux-gnu]
+#rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+
+#sudo apt-fast install lld clang
+#[target.aarch64-unknown-linux-gnu]
+#rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+
+#rustup component add llvm-tools-preview
+
+#rustup component add rustc-codegen-cranelift-preview --toolchain nightly
+
+#cargo install cargo-pgo
+
+#cargo build --release [--no-default-features --features=s3|redis|gcs|memcached|azure|gha|webdav|oss]

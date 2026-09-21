@@ -1,0 +1,13 @@
+[package]
+name = "nanai-auto-multi-fall"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy = "0.19.1"
+log = { version = "0.4.34", features = [
+    "max_level_debug",
+    "release_max_level_warn",
+] }
+icu_provider = { version = "2.3.1", features = ["logging"] }
+bevy_rand = { version = "0.15.2", features = ["wyrand"] }
