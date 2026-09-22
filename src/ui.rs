@@ -46,9 +46,16 @@ pub fn update_ui_system(
     mut total_text_query: Query<&mut Text2d, With<TotalScoreText>>,
 ) {
     for mut text in total_text_query.iter_mut() {
-        **text = format!(
-            "NANAI AUTO MULTI-FALL (WIDE FIELD)\nTOTAL SCORE: {}  |  TOTAL LINES: {}",
-            board.score, board.lines_cleared
-        );
+        if board.game_over {
+            **text = format!(
+                "--- GAME OVER ---\nFINAL SCORE: {}  |  LINES CLEARED: {}",
+                board.score, board.lines_cleared
+            );
+        } else {
+            **text = format!(
+                "NANAI AUTO MULTI-FALL (WIDE FIELD)\nTOTAL SCORE: {}  |  TOTAL LINES: {}",
+                board.score, board.lines_cleared
+            );
+        }
     }
 }

@@ -12,13 +12,14 @@ pub fn spawn_tromino_system(
     mut commands: Commands,
     time: Res<Time>,
     settings: Res<GameSettings>,
-    mut board: ResMut<GlobalBoard>,
+    board: Res<GlobalBoard>,
     mut rng_query: Query<&mut WyRand, With<GlobalRng>>,
     mut lane_query: Query<(Entity, &LaneSlot, Option<&mut LaneSpawnCooldown>)>,
     falling_query: Query<&FallingTromino>,
 ) {
     if board.game_over {
-        board.reset();
+        // ゲームオーバー時は自動リセットせずスポーンを停止
+        return;
     }
 
     let Ok(mut rng) = rng_query.single_mut() else {
@@ -247,23 +248,42 @@ pub fn falling_tromino_system(
         }
 
         // 2. 横移動処理（壁・固定ブロック・他落下トミノとの移動先衝突判定）
-        let can_move_horizontal = falling.current_y < SPAWN_WALL_MIN_Y as f32;
-        if can_move_horizontal {
-            let dx = falling.target_x as f32 - falling.current_x;
-            if dx.abs() > 0.01 {
-                let step = 18.0 * dt;
-                let next_x = if dx.abs() <= step {
-                    falling.target_x as f32
-                } else {
-                    falling.current_x + step * dx.signum()
-                };
+        let (lane_min_x, lane_max_x) = lane_x_range(falling.lane_id);
+        let offsets = falling.kind.cell_offsets(falling.current_rotation);
+        let max_dy = offsets.iter().map(|(_, dy)| *dy).max().unwrap_or(0);
+        let min_dx = offsets.iter().map(|(dx, _)| *dx).min().unwrap_or(0);
+        let max_dx = offsets.iter().map(|(dx, _)| *dx).max().unwrap_or(0);
 
-                let next_int_x = next_x.round() as i32;
+        // トミノの全パーツが完全に仕切り壁より下にあるか判定
+        let fully_below_spawn_wall = (falling.current_y.round() as i32 + max_dy) < SPAWN_WALL_MIN_Y as i32;
+
+        let dx = falling.target_x as f32 - falling.current_x;
+        if dx.abs() > 0.01 {
+            let step = 18.0 * dt;
+            let dir = dx.signum();
+            let next_x = if dx.abs() <= step {
+                falling.target_x as f32
+            } else {
+                falling.current_x + step * dir
+            };
+
+            // 移動方向へ進んだ際に触れる直近の整数座標を判定
+            let check_int_x = if dir > 0.0 {
+                next_x.ceil() as i32
+            } else {
+                next_x.floor() as i32
+            };
+
+            let block_min_x = check_int_x + min_dx;
+            let block_max_x = check_int_x + max_dx;
+            let is_inside_slot = block_min_x >= lane_min_x as i32 && block_max_x <= lane_max_x as i32;
+
+            if is_inside_slot || fully_below_spawn_wall {
                 let collides = check_position_collision(
                     &board,
                     &falling.kind,
                     falling.current_rotation,
-                    next_int_x,
+                    check_int_x,
                     current_int_y,
                     tromino_entity,
                     &current_falling,
@@ -271,64 +291,54 @@ pub fn falling_tromino_system(
 
                 if !collides {
                     falling.current_x = next_x;
+                } else {
+                    // 障害物にぶつかる場合は直前の安全な整数座標にピタッと寄せる
+                    let safe_stop_x = current_int_x as f32;
+                    if (falling.current_x - safe_stop_x).abs() <= step {
+                        falling.current_x = safe_stop_x;
+                    }
                 }
             }
         }
 
         let updated_int_x = falling.current_x.round() as i32;
 
-        let mut bottom_blocked = false;
+        // 3. 接地判定（床またはボード上の固定ブロックに直下で乗っているか）
+        let offsets = falling.kind.cell_offsets(falling.current_rotation);
+        let is_on_ground = offsets.iter().any(|(dx, dy)| {
+            let cx = updated_int_x + dx;
+            let cy = current_int_y + dy - 1;
+            board.is_occupied(cx, cy)
+        });
 
-        // 3. 下降処理（直下が塞がっている場合は即座に接地とみなす）
+        // 4. 下降処理
         falling.fall_timer.tick(time.delta());
         if falling.fall_timer.just_finished() {
-            let next_int_y = current_int_y - 1;
-
-            let bottom_hit_board = {
-                let offsets = falling.kind.cell_offsets(falling.current_rotation);
-                offsets.iter().any(|(dx, dy)| {
-                    let cx = updated_int_x + dx;
-                    let cy = next_int_y + dy;
-                    board.is_occupied(cx, cy)
-                })
-            };
-
-            if bottom_hit_board {
-                bottom_blocked = true;
-                falling.landing_y = current_int_y;
-                falling.current_y = current_int_y as f32;
-            } else {
-                let bottom_hit_other = {
-                    let offsets = falling.kind.cell_offsets(falling.current_rotation);
-                    current_falling.iter().any(|(other_ent, other_cells)| {
-                        if *other_ent == tromino_entity {
-                            return false;
-                        }
-                        offsets.iter().any(|(dx, dy)| {
-                            let cx = updated_int_x + dx;
-                            let cy = next_int_y + dy;
-                            other_cells.contains(&(cx, cy))
-                        })
+            if !is_on_ground {
+                let next_int_y = current_int_y - 1;
+                // 他の落下中トミノが直下にあるか判定
+                let bottom_hit_other = current_falling.iter().any(|(other_ent, other_cells)| {
+                    if *other_ent == tromino_entity {
+                        return false;
+                    }
+                    offsets.iter().any(|(dx, dy)| {
+                        let cx = updated_int_x + dx;
+                        let cy = next_int_y + dy;
+                        other_cells.contains(&(cx, cy))
                     })
-                };
+                });
 
-                if bottom_hit_other {
-                    bottom_blocked = true;
-                    falling.landing_y = current_int_y;
-                    falling.current_y = current_int_y as f32;
-                } else if falling.current_y > falling.landing_y as f32 {
-                    falling.current_y = (falling.current_y - 1.0).max(falling.landing_y as f32);
+                // 他の落下トミノと重ならない場合のみ1段降下
+                if !bottom_hit_other {
+                    falling.current_y = (current_int_y - 1) as f32;
                 }
+            } else {
+                falling.current_y = current_int_y as f32;
             }
         }
 
-        // 4. 着地点到達 & 固定処理
-        let arrived_landing = falling.current_y <= falling.landing_y as f32 + 0.05;
-        let arrived_x = (falling.current_x - falling.target_x as f32).abs() < 0.15;
-        let arrived_rotation = falling.current_rotation == falling.target_rotation;
-
-        // 目標到達、または真下が塞がってこれ以上落ちられない場合はロック進行
-        if (arrived_landing && arrived_x && arrived_rotation) || bottom_blocked {
+        // 5. 固定処理（床または固定ブロックに接地している場合のみロックタイマーを進行）
+        if is_on_ground {
             falling.lock_timer.tick(time.delta());
             if falling.lock_timer.is_finished() {
                 let lock_x = falling.current_x.round() as i32;

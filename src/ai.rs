@@ -64,8 +64,9 @@ impl AutoAi {
             let search_max_x = (lane_max_x as i32 + 4).min((TOTAL_GRID_WIDTH as i32 - 1) - max_dx);
 
             for x in search_min_x..=search_max_x {
+                // 他プレイヤーの予想着地結果を含めた future_board を基準にシミュレーション
                 if let Some(landing_y) = Self::simulate_drop(
-                    board,
+                    &future_board,
                     lane_id,
                     kind,
                     rot,
@@ -112,7 +113,7 @@ impl AutoAi {
         best_move
     }
 
-    /// 落下シミュレーション
+    /// 落下シミュレーション（スポーン口からの横移動経路到達判定付き）
     pub fn simulate_drop(
         board: &GlobalBoard,
         lane_id: usize,
@@ -126,7 +127,12 @@ impl AutoAi {
         let start_y = (LANE_HEIGHT - 1) as i32;
 
         let spawn_x = lane_min_x as i32;
-        if !Self::can_place_check(board, kind, rot, spawn_x, start_y, air_obstacles) {
+        // スポーン口の安全チェック（初期姿勢）
+        let initial_rotation = match kind {
+            TrominoKind::Straight => 1,
+            TrominoKind::Corner => 0,
+        };
+        if !Self::can_place_check(board, kind, initial_rotation, spawn_x, start_y, air_obstacles) {
             return None;
         }
 
@@ -141,8 +147,8 @@ impl AutoAi {
 
         let max_dy = offsets.iter().map(|(_, dy)| *dy).max().unwrap();
 
-        // 投入口外（境界列や隣レーン）へはみ出す配置の場合、
-        // 上部セパレータ壁（y >= SPAWN_WALL_MIN_Y）の下端（壁を抜けた地点）から横移動して落下する
+        // 投入口外へはみ出す配置の場合、
+        // 上部セパレータ壁（y >= SPAWN_WALL_MIN_Y）の下端（壁を完全に抜けた地点）から横移動する
         let sim_start_y = if is_inside_slot {
             start_y
         } else {
@@ -153,8 +159,13 @@ impl AutoAi {
             return None;
         }
 
-        if !Self::can_place_check(board, kind, rot, target_x, sim_start_y, reserved_landing_cells) {
-            return None;
+        // スポーン位置 (spawn_x) から 目標位置 (target_x) への横移動経路上の障害物チェック
+        let min_step_x = spawn_x.min(target_x);
+        let max_step_x = spawn_x.max(target_x);
+        for path_x in min_step_x..=max_step_x {
+            if !Self::can_place_check(board, kind, rot, path_x, sim_start_y, reserved_landing_cells) {
+                return None;
+            }
         }
 
         let mut y = sim_start_y;
