@@ -7,18 +7,54 @@ use bevy::prelude::*;
 use bevy_prng::WyRand;
 use bevy_rand::prelude::GlobalRng;
 
-/// 新規トミノのスポーンシステム（予測型連携AI対応）
+/// 各レーンのシグナル更新システム（人間的な低解像度情報：穴の位置・状態・各自の自己申告ペース・意図）
+pub fn update_lane_signals_system(
+    board: Res<GlobalBoard>,
+    mut signal_board: ResMut<LaneSignalBoard>,
+    falling_query: Query<&FallingTromino>,
+) {
+    for lane_id in 0..LANE_COUNT {
+        // 1. 空白（穴）情報の抽出
+        let (hole_x, hole_status) = match board.find_lane_deepest_hole(lane_id) {
+            Some((hx, _hy, has_roof)) => {
+                if has_roof {
+                    (Some(hx), HoleStatus::WaitingForClearance)
+                } else {
+                    (Some(hx), HoleStatus::ReadyForFill)
+                }
+            }
+            None => (None, HoleStatus::None),
+        };
+
+        // 2. 落下中トミノ（各レーンAI）からの自己申告意図（Intent）および自己決定ペースの抽出
+        let falling_opt = falling_query.iter().find(|f| f.lane_id == lane_id);
+        let intent_target_x = falling_opt.map(|f| f.target_x);
+        let pace = falling_opt.map(|f| f.pace).unwrap_or(LanePace::Normal);
+
+        signal_board.signals[lane_id] = LaneSignal {
+            lane_id,
+            hole_x,
+            hole_status,
+            intent_target_x,
+            pace,
+        };
+    }
+}
+
+
+/// 新規トミノのスポーンシステム（限定シグナル＆ペース連動対応）
 pub fn spawn_tromino_system(
     mut commands: Commands,
     time: Res<Time>,
     settings: Res<GameSettings>,
-    board: Res<GlobalBoard>,
+    mut board: ResMut<GlobalBoard>,
+    signals: Res<LaneSignalBoard>,
     mut rng_query: Query<&mut WyRand, With<GlobalRng>>,
     mut lane_query: Query<(Entity, &LaneSlot, Option<&mut LaneSpawnCooldown>)>,
     falling_query: Query<&FallingTromino>,
 ) {
     if board.game_over {
-        // ゲームオーバー時は自動リセットせずスポーンを停止
+        // 全員積み（ゲームオーバー）時はスポーンを停止
         return;
     }
 
@@ -62,54 +98,84 @@ pub fn spawn_tromino_system(
             commands.entity(lane_entity).remove::<LaneSpawnCooldown>();
         }
 
-        let kind = TrominoKind::random_from_rng(&mut rng);
-
-        let best_move =
-            match AutoAi::find_best_move(&board, lane.id, &kind, &predicted_others, &air_obstacles)
-            {
-                Some(m) => m,
-                None => {
-                    commands.entity(lane_entity).insert(LaneSpawnCooldown {
-                        timer: Timer::from_seconds(0.2, TimerMode::Once),
-                    });
-                    continue;
-                }
-            };
-
-        predicted_others.push(PredictedPlacement {
-            player_id: lane.id,
-            kind,
-            rotation: best_move.rotation,
-            target_x: best_move.target_x,
-            landing_y: best_move.landing_y,
-        });
-
-        let start_y = (LANE_HEIGHT - 1) as f32;
         let (lane_min_x, _) = lane_x_range(lane.id);
         let start_x = lane_min_x as f32;
+        let start_y = (LANE_HEIGHT - 1) as f32;
 
-        // スポーン時は投入口内（幅3）に安全に収まる初期回転（縦向きStraight等）から開始
-        // Straight: rot=1 (縦向き 1x3), Corner: rot=0
+        let kind = TrominoKind::random_from_rng(&mut rng);
+
+        // スポーン時の初期姿勢
         let initial_rotation = match kind {
             TrominoKind::Straight => 1,
             TrominoKind::Corner => 0,
         };
 
-        commands.spawn(FallingTromino {
-            lane_id: lane.id,
-            kind,
-            current_rotation: initial_rotation,
-            target_rotation: best_move.rotation,
-            current_x: start_x,
-            current_y: start_y,
-            target_x: best_move.target_x,
-            landing_y: best_move.landing_y,
-            fall_timer: Timer::from_seconds(settings.fall_interval, TimerMode::Repeating),
-            lock_timer: Timer::from_seconds(0.06, TimerMode::Once),
-            rotate_timer: Timer::from_seconds(0.08, TimerMode::Repeating),
-        });
+        // 投入口直下にブロックが詰まっているかチェック
+        let can_enter_spawn = board.can_place(&kind, initial_rotation, start_x as i32, start_y as i32);
+
+        let best_move = if can_enter_spawn {
+            AutoAi::find_best_move(&board, lane.id, &kind, &predicted_others, &air_obstacles, &signals)
+        } else {
+            None
+        };
+
+        match best_move {
+            Some(m) => {
+                // スポーン成功 -> 当該レーンの積み状態は解消（回復）
+                board.lane_stuck[lane.id] = false;
+
+                predicted_others.push(PredictedPlacement {
+                    player_id: lane.id,
+                    kind,
+                    rotation: m.rotation,
+                    target_x: m.target_x,
+                    landing_y: m.landing_y,
+                });
+
+                let lane_pace = m.pace;
+                let base_interval = settings.current_base_fall_interval(board.lines_cleared);
+                let fall_interval = match lane_pace {
+                    LanePace::SoftDrop => base_interval * settings.soft_drop_multiplier,
+                    LanePace::Normal => base_interval,
+                };
+
+                commands.spawn(FallingTromino {
+                    lane_id: lane.id,
+                    kind,
+                    current_rotation: initial_rotation,
+                    target_rotation: m.rotation,
+                    current_x: start_x,
+                    current_y: start_y,
+                    target_x: m.target_x,
+                    landing_y: m.landing_y,
+                    fall_timer: Timer::from_seconds(fall_interval, TimerMode::Repeating),
+                    lock_timer: Timer::from_seconds(LOCK_DELAY, TimerMode::Once),
+                    rotate_timer: Timer::from_seconds(0.08, TimerMode::Repeating),
+                    is_on_ground: false,
+                    lock_resets_left: MAX_LOCK_RESETS,
+                    pace: lane_pace,
+                    waypoints: m.waypoints,
+                });
+
+
+            }
+            None => {
+                // 次の形が出せない（一時的な積み）状態
+                if !can_enter_spawn {
+                    board.lane_stuck[lane.id] = true;
+                    if board.lane_stuck.iter().all(|&stuck| stuck) {
+                        board.game_over = true;
+                    }
+                }
+
+                commands.entity(lane_entity).insert(LaneSpawnCooldown {
+                    timer: Timer::from_seconds(0.25, TimerMode::Once),
+                });
+            }
+        }
     }
 }
+
 
 /// 指定した (x, y, rotation) においてトミノが盤面（壁・固定ブロック）および他トミノと衝突するか判定
 fn check_position_collision(
@@ -257,12 +323,61 @@ pub fn falling_tromino_system(
         // トミノの全パーツが完全に仕切り壁より下にあるか判定
         let fully_below_spawn_wall = (falling.current_y.round() as i32 + max_dy) < SPAWN_WALL_MIN_Y as i32;
 
-        let dx = falling.target_x as f32 - falling.current_x;
+        // 2. ウェイポイントの更新と横移動処理
+        // ウェイポイントがある場合、現在の高度・位置に合わせて到達判定と次の目標決定を行う
+        while !falling.waypoints.is_empty() {
+            let (wp_x, wp_y) = falling.waypoints[0];
+            // ウェイポイントの X に到達しており、かつ高度も通過または到達していれば消費
+            if (falling.current_x - wp_x as f32).abs() <= 0.05
+                && (current_int_y <= wp_y || (falling.waypoints.len() > 1 && falling.waypoints[1].1 < wp_y))
+            {
+                falling.waypoints.remove(0);
+            } else if current_int_y < wp_y && (falling.current_x - wp_x as f32).abs() > 0.05 {
+                // すでにそのウェイポイントの高度より下回ってしまっている場合はスキップして次へ
+                falling.waypoints.remove(0);
+            } else {
+                break;
+            }
+        }
+
+        let curr_target_x = if let Some(&(wp_x, wp_y)) = falling.waypoints.first() {
+            // もしウェイポイントの高度よりまだ高い段にいる場合:
+            // 途中に障害物（屋根）があるかもしれないので、そのウェイポイントの高度 wp_y 付近まで降りるのを優先。
+            // ただし wp_x への横移動が安全（衝突なし）なら早期に横移動してもよい。
+            if current_int_y > wp_y {
+                // 現在の高さで wp_x へ向かうと衝突するか事前チェック
+                let test_dir = (wp_x as f32 - falling.current_x).signum();
+                let test_next_int_x = (falling.current_x + test_dir).round() as i32;
+                let test_block_min_x = test_next_int_x + min_dx;
+                let test_block_max_x = test_next_int_x + max_dx;
+                let test_inside = test_block_min_x >= lane_min_x as i32 && test_block_max_x <= lane_max_x as i32;
+                if (test_inside || fully_below_spawn_wall) && check_position_collision(
+                    &board,
+                    &falling.kind,
+                    falling.current_rotation,
+                    test_next_int_x,
+                    current_int_y,
+                    tromino_entity,
+                    &current_falling,
+                ) {
+                    // 頭上や側面に障害物があるため、wp_y まで下降するまでは横移動を保留
+                    current_int_x
+                } else {
+                    wp_x
+                }
+            } else {
+                wp_x
+            }
+        } else {
+            falling.target_x
+        };
+
+        let dx = curr_target_x as f32 - falling.current_x;
         if dx.abs() > 0.01 {
             let step = 18.0 * dt;
             let dir = dx.signum();
             let next_x = if dx.abs() <= step {
-                falling.target_x as f32
+                curr_target_x as f32
             } else {
                 falling.current_x + step * dir
             };
@@ -291,6 +406,11 @@ pub fn falling_tromino_system(
 
                 if !collides {
                     falling.current_x = next_x;
+                    // 接地中に横スライド移動が成功した場合、ロックタイマーをリセット（スライディング猶予時間）
+                    if falling.is_on_ground && falling.lock_resets_left > 0 {
+                        falling.lock_timer.reset();
+                        falling.lock_resets_left -= 1;
+                    }
                 } else {
                     // 障害物にぶつかる場合は直前の安全な整数座標にピタッと寄せる
                     let safe_stop_x = current_int_x as f32;
@@ -310,6 +430,16 @@ pub fn falling_tromino_system(
             let cy = current_int_y + dy - 1;
             board.is_occupied(cx, cy)
         });
+
+        // 接地状態の変化を追跡
+        if is_on_ground && !falling.is_on_ground {
+            // 空中から接地した瞬間: ロックタイマー開始
+            falling.is_on_ground = true;
+            falling.lock_timer.reset();
+        } else if !is_on_ground {
+            // 横移動や落下によって再び浮いた場合: 接地解除
+            falling.is_on_ground = false;
+        }
 
         // 4. 下降処理
         falling.fall_timer.tick(time.delta());
@@ -363,8 +493,13 @@ pub fn falling_tromino_system(
 
                 for (lane_entity, lane) in lane_query.iter() {
                     if lane.id == falling.lane_id {
-                        // ランダムな揺らぎ（0.05〜0.25s）をつけて同調スポーンによる空中衝突を分散
-                        let delay = settings.spawn_delay + (falling.lane_id as f32 * 0.04);
+                        // ソフトドロップ（急ぎ）のレーンはスポーンクールダウンも短縮して次弾を急ぐ
+                        let pace_multiplier = match falling.pace {
+                            LanePace::SoftDrop => 0.65,
+                            LanePace::Normal => 1.0,
+                        };
+                        let delay = (settings.spawn_delay + (falling.lane_id as f32 * 0.04)) * pace_multiplier;
+
                         commands.entity(lane_entity).insert(LaneSpawnCooldown {
                             timer: Timer::from_seconds(delay, TimerMode::Once),
                         });
@@ -375,5 +510,6 @@ pub fn falling_tromino_system(
                 commands.entity(tromino_entity).despawn();
             }
         }
+
     }
 }

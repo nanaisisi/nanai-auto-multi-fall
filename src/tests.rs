@@ -57,7 +57,8 @@ mod tests {
             landing_y: 5,
         }];
 
-        let best_move = AutoAi::find_best_move(&board, 0, &kind, &predicted_others, &[])
+        let signals = crate::game::LaneSignalBoard::default();
+        let best_move = AutoAi::find_best_move(&board, 0, &kind, &predicted_others, &[], &signals)
             .expect("Move found");
 
         assert_eq!(best_move.rotation, 0);
@@ -72,7 +73,8 @@ mod tests {
         board.cells[0][1] = Some(player_color(0));
 
         let kind = TrominoKind::Straight;
-        let best_move = AutoAi::find_best_move(&board, 0, &kind, &[], &[]).expect("Move found");
+        let signals = crate::game::LaneSignalBoard::default();
+        let best_move = AutoAi::find_best_move(&board, 0, &kind, &[], &[], &signals).expect("Move found");
 
         let offsets = kind.cell_offsets(best_move.rotation);
         let uses_border = offsets
@@ -81,6 +83,7 @@ mod tests {
 
         assert!(uses_border, "AI should utilize border columns when appropriate");
     }
+
 
     #[test]
     fn test_movement_destination_collision_prevention() {
@@ -108,5 +111,115 @@ mod tests {
 
         // 左に2マスシフト (x=28) すれば、横向き (28, 29, 30) で収まるため配置可能
         assert!(board.can_place(&kind, 0, 28, 0));
+    }
+
+    #[test]
+    fn test_tuck_in_pathfinding_under_overhang() {
+        let mut board = GlobalBoard::default();
+        // (x=1, y=2) にブロックを置いて直下落下を遮断 (overhang)
+        // 下段 (x=1, y=0) は空洞。
+        board.cells[2][1] = Some(player_color(0));
+
+        let kind = TrominoKind::Straight;
+        // x=1 へ垂直落下しようとすると y=3 で止まるはず
+        let direct_y = AutoAi::simulate_drop_with_tuck(&board, 0, &kind, 1, 1, &[], &[]);
+        assert!(direct_y.is_some());
+    }
+
+    #[test]
+    fn test_hole_detection_and_progress_pacing() {
+        let mut board = GlobalBoard::default();
+        // Lane 0 (x=0,1,2) に穴を作成: x=0 の y=2 にブロック、y=0,1 は空洞
+        board.cells[2][0] = Some(player_color(0));
+
+        let hole = board.find_lane_deepest_hole(0);
+        assert!(hole.is_some());
+        let (hx, hy, has_roof) = hole.unwrap();
+        assert_eq!(hx, 0);
+        assert!(has_roof, "Should detect roof over hole");
+        assert!(hy < 2);
+
+        // 充足率チェック: 空のボードでは 0.0
+        let fresh_board = GlobalBoard::default();
+        assert_eq!(fresh_board.lane_fill_ratio_at_target_line(0), 0.0);
+
+        // board には y=2 に1個あるので、y=2 が最も埋まっている行になり 1/3 (0.333...) となる
+        let ratio = board.lane_fill_ratio_at_target_line(0);
+        assert!((ratio - 1.0 / 3.0).abs() < 0.01);
+
+        // 自レーンAIによるペース自己決定のテスト: 空白・遅れがあるため SoftDrop（下キー入力）を自己決定するはず
+        let kind = TrominoKind::Straight;
+        let signals = crate::game::LaneSignalBoard::default();
+        let best_move = AutoAi::find_best_move(&board, 0, &kind, &[], &[], &signals).expect("Move found");
+        assert_eq!(best_move.pace, crate::game::LanePace::SoftDrop);
+    }
+
+    #[test]
+    fn test_lines_cleared_speedup_and_soft_drop() {
+        let settings = crate::config::GameSettings::default();
+        let initial_speed = settings.current_base_fall_interval(0);
+        let speed_after_5_lines = settings.current_base_fall_interval(5);
+        let speed_after_20_lines = settings.current_base_fall_interval(20);
+
+        assert!(speed_after_5_lines < initial_speed, "Speed should accelerate as lines are cleared");
+        assert!(speed_after_20_lines <= speed_after_5_lines);
+        assert!(speed_after_20_lines >= settings.min_fall_interval);
+
+        // SoftDrop 時はさらに倍率がかかり高速
+        let soft_drop_interval = speed_after_5_lines * settings.soft_drop_multiplier;
+        assert!(soft_drop_interval < speed_after_5_lines);
+    }
+
+    #[test]
+    fn test_ai_handles_high_placement_without_panic() {
+        // フィールド上部ギリギリ (y >= LANE_HEIGHT) に積み上がった状態でのAI探索でパニックしないことを検証
+        let mut board = GlobalBoard::default();
+        for y in 0..(crate::config::LANE_HEIGHT - 2) {
+            board.cells[y][0] = Some(player_color(0));
+            board.cells[y][1] = Some(player_color(0));
+            board.cells[y][2] = Some(player_color(0));
+        }
+
+        let kind = TrominoKind::Straight;
+        let signals = crate::game::LaneSignalBoard::default();
+        let _ = AutoAi::find_best_move(&board, 0, &kind, &[], &[], &signals);
+    }
+
+    #[test]
+    fn test_corner_ground_slide_into_alcove() {
+        // 横の凹みになっている場所への接地時横移動（L字 / Corner）テスト
+        let mut board = GlobalBoard::default();
+        // Lane 0 (x=0,1,2)
+        // x=0, y=1 にブロックを置き、x=0, y=0 は横の凹み（空洞）
+        // 床 (y=0) は空いているので、x=0, y=0 に Corner (rot=3: (1,1), (0,0), (1,0)) を配置する。
+        // rot=3 は (0,1) が空いているため、(0,0) に収まることができる！
+        // しかし直上 (x=0) から垂直落下しようとすると (1,1) のブロック部分が y=1 付近で干渉するか、
+        // あるいは x=1 の列から下まで降りて、最後に左 (x=0) へ接地スライドして入る。
+        board.cells[1][0] = Some(player_color(0));
+
+        let path = AutoAi::simulate_drop_with_tuck_path(&board, 0, &TrominoKind::Corner, 3, 0, &[], &[]);
+        assert!(path.is_some(), "Should find path into alcove for corner tromino");
+        let (landing_y, waypoints) = path.unwrap();
+        assert_eq!(landing_y, 0, "Should land at y=0 inside alcove");
+        assert!(!waypoints.is_empty(), "Should generate waypoints to guide lateral slide");
+    }
+
+    #[test]
+    fn test_straight_aerial_slide_under_overhang() {
+        // 上側にブロックがある状態にI字（Straight）を空中横移動で埋めるテスト
+        let mut board = GlobalBoard::default();
+        // x=0..=2 の y=2 に屋根（オーバーハング）を配置
+        // y=0, 1 は空洞
+        board.cells[2][0] = Some(player_color(0));
+        board.cells[2][1] = Some(player_color(0));
+        board.cells[2][2] = Some(player_color(0));
+
+        // 隣のレーン (x=3) などから進入可能
+        // Straight (横向き: rot=0, (0,0), (1,0), (2,0)) を y=0, x=0 の奥に埋める
+        let path = AutoAi::simulate_drop_with_tuck_path(&board, 0, &TrominoKind::Straight, 0, 0, &[], &[]);
+        assert!(path.is_some(), "Should find aerial tuck-in path for Straight tromino under overhang");
+        let (landing_y, waypoints) = path.unwrap();
+        assert_eq!(landing_y, 0, "Should reach bottom y=0 under the roof");
+        assert!(waypoints.len() >= 2, "Should have descent then lateral move waypoints");
     }
 }

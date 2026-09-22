@@ -49,17 +49,35 @@ pub fn player_ghost_color(player_id: usize) -> Color {
     Color::srgba(srgba.red, srgba.green, srgba.blue, 0.28)
 }
 
+pub const LOCK_DELAY: f32 = 0.40; // 接地してから固定されるまでの猶予時間
+pub const MAX_LOCK_RESETS: usize = 4; // 接地猶予時間内のスライド・移動によるロックリセット最大回数
+
 #[derive(Resource)]
 pub struct GameSettings {
-    pub fall_interval: f32,
+    pub initial_fall_interval: f32, // 初期基準落下間隔（秒）
+    pub min_fall_interval: f32,     // 消去加速の上限速度（最短落下間隔）
     pub spawn_delay: f32,
+    pub soft_drop_multiplier: f32,  // 下キー入力（ソフトドロップ）時の落下間隔倍率
 }
 
 impl Default for GameSettings {
     fn default() -> Self {
         Self {
-            fall_interval: 0.10,
+            initial_fall_interval: 0.18, // 初期はゆったり（約5.5マス/秒）
+            min_fall_interval: 0.04,     // 最高速（25マス/秒）
             spawn_delay: 0.12,
+            soft_drop_multiplier: 0.35,  // 下キー入力時は約3倍速で高速落下
         }
     }
 }
+
+impl GameSettings {
+    /// 消去ライン数に比例して加速するシステム基準落下間隔
+    pub fn current_base_fall_interval(&self, lines_cleared: u32) -> f32 {
+        // 1ライン消去ごとに 0.007秒 ずつ落下間隔が短縮
+        let speedup = lines_cleared as f32 * 0.007;
+        (self.initial_fall_interval - speedup).max(self.min_fall_interval)
+    }
+}
+
+

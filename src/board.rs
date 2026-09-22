@@ -25,6 +25,7 @@ pub struct GlobalBoard {
     pub score: u32,
     pub lines_cleared: u32,
     pub game_over: bool,
+    pub lane_stuck: [bool; crate::config::LANE_COUNT],
 }
 
 impl Default for GlobalBoard {
@@ -34,15 +35,19 @@ impl Default for GlobalBoard {
             score: 0,
             lines_cleared: 0,
             game_over: false,
+            lane_stuck: [false; crate::config::LANE_COUNT],
         }
     }
 }
 
 impl GlobalBoard {
+    #[allow(dead_code)]
     pub fn reset(&mut self) {
         self.cells = [[None; TOTAL_GRID_WIDTH]; LANE_HEIGHT];
         self.game_over = false;
+        self.lane_stuck = [false; crate::config::LANE_COUNT];
     }
+
 
     /// (x, y) にブロックが存在するか、または外壁・投入口壁かを判定
     pub fn is_occupied(&self, x: i32, y: i32) -> bool {
@@ -99,7 +104,10 @@ impl GlobalBoard {
         }
 
         if top_overflow {
-            self.game_over = true;
+            self.lane_stuck[player_id % crate::config::LANE_COUNT] = true;
+            if self.lane_stuck.iter().all(|&stuck| stuck) {
+                self.game_over = true;
+            }
             return false;
         }
 
@@ -131,6 +139,25 @@ impl GlobalBoard {
             3 => 1800,
             _ => lines as u32 * 500,
         };
+
+        if lines > 0 {
+            // 下のブロックが消去されたため、各レーンの投入口詰まりを再評価
+            for lane_id in 0..crate::config::LANE_COUNT {
+                let (min_x, max_x) = lane_x_range(lane_id);
+                // 投入口の上部（SPAWN_WALL_MIN_Y以上）にブロックが残っていなければ積み解除
+                let still_blocked = (SPAWN_WALL_MIN_Y..LANE_HEIGHT).any(|y| {
+                    (min_x..=max_x).any(|x| self.cells[y][x].is_some())
+                });
+                if !still_blocked {
+                    self.lane_stuck[lane_id] = false;
+                }
+            }
+
+            // まだ全員が詰まっていない場合はゲームオーバー状態も復帰
+            if !self.lane_stuck.iter().all(|&stuck| stuck) {
+                self.game_over = false;
+            }
+        }
 
         lines
     }
@@ -164,4 +191,70 @@ impl GlobalBoard {
         }
         holes
     }
+
+    /// 指定レーン範囲内の穴（最深の空白）の座標 (x, y) および頭上にブロックが被さっているかを返す
+    pub fn find_lane_deepest_hole(&self, lane_id: usize) -> Option<(usize, usize, bool)> {
+        let (min_x, max_x) = lane_x_range(lane_id);
+
+        let mut deepest_hole: Option<(usize, usize, bool)> = None;
+
+        for x in min_x..=max_x {
+            let mut roof_exists = false;
+            for y in (0..LANE_HEIGHT).rev() {
+                if self.cells[y][x].is_some() {
+                    roof_exists = true;
+                } else if roof_exists {
+                    // 空白を発見。より低い位置 (y が小さい) の穴を優先
+                    match deepest_hole {
+                        None => deepest_hole = Some((x, y, true)),
+                        Some((_, prev_y, _)) if y < prev_y => deepest_hole = Some((x, y, true)),
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        // もし屋根が被さっている穴がなければ、最下層付近で未配置のマス（隣の列より凹んでいる谷）をチェック
+        if deepest_hole.is_none() {
+            let heights = self.column_heights();
+            let avg_height: f32 = (min_x..=max_x).map(|x| heights[x] as f32).sum::<f32>() / (max_x - min_x + 1) as f32;
+            for x in min_x..=max_x {
+                if (heights[x] as f32) < avg_height - 1.0 {
+                    // 明らかに凹んでいる（今すぐ埋められる）場所
+                    return Some((x, heights[x], false)); // 屋根なし (ReadyForFill)
+                }
+            }
+        }
+
+        deepest_hole
+    }
+
+    /// 対象ターゲット行（最もブロックが揃っている下層段）における自レーンのブロック充足率 (0.0〜1.0) を算出
+    pub fn lane_fill_ratio_at_target_line(&self, lane_id: usize) -> f32 {
+        let (min_x, max_x) = lane_x_range(lane_id);
+        let lane_w = max_x - min_x + 1;
+
+        // 全体で最も揃っている（あと数個で消えそうな）下位行を探す
+        let mut best_target_y = 0;
+        let mut max_overall_filled = 0;
+        for y in 0..5.min(LANE_HEIGHT) {
+            let filled_count = (0..TOTAL_GRID_WIDTH).filter(|&x| self.cells[y][x].is_some()).count();
+            if filled_count > max_overall_filled {
+                max_overall_filled = filled_count;
+                best_target_y = y;
+            }
+        }
+
+        if max_overall_filled == 0 {
+            return 0.0;
+        }
+
+        let my_lane_filled = (min_x..=max_x)
+            .filter(|&x| self.cells[best_target_y][x].is_some())
+            .count();
+
+        my_lane_filled as f32 / lane_w as f32
+
+    }
 }
+

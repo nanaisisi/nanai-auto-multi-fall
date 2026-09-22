@@ -19,6 +19,7 @@ fn main() {
     App::new()
         .insert_resource(config::GameSettings::default())
         .init_resource::<board::GlobalBoard>()
+        .init_resource::<game::LaneSignalBoard>()
         .add_plugins(EntropyPlugin::<WyRand>::default())
         .add_plugins(
             DefaultPlugins
@@ -39,11 +40,13 @@ fn main() {
         .add_systems(
             Update,
             (
+                systems::update_lane_signals_system,
                 systems::spawn_tromino_system,
                 systems::falling_tromino_system,
                 render::render_system,
                 ui::update_ui_system,
-            ),
+            ).chain(),
         )
+
         .run();
 }

@@ -3,6 +3,11 @@ use crate::board::{lane_x_range, GlobalBoard};
 use crate::config::*;
 use crate::game::*;
 
+#[derive(Component)]
+pub struct LaneLabel {
+    pub lane_id: usize,
+}
+
 pub fn setup_ui(mut commands: Commands) {
     let total_pixel_h = LANE_HEIGHT as f32 * (CELL_SIZE + CELL_GAP) - CELL_GAP;
     let header_y = (total_pixel_h / 2.0) + 25.0;
@@ -24,6 +29,7 @@ pub fn setup_ui(mut commands: Commands) {
             TextColor(color),
             TextLayout::default().with_justify(Justify::Center),
             Transform::from_xyz(world_pos.x, header_y + 5.0, 10.0),
+            LaneLabel { lane_id },
         ));
     }
 
@@ -43,19 +49,39 @@ pub fn setup_ui(mut commands: Commands) {
 
 pub fn update_ui_system(
     board: Res<GlobalBoard>,
-    mut total_text_query: Query<&mut Text2d, With<TotalScoreText>>,
+    mut total_text_query: Query<&mut Text2d, (With<TotalScoreText>, Without<LaneLabel>)>,
+    mut lane_label_query: Query<(&LaneLabel, &mut Text2d, &mut TextColor), Without<TotalScoreText>>,
 ) {
+    for (lane_label, mut text, mut text_color) in lane_label_query.iter_mut() {
+        let is_stuck = board.lane_stuck[lane_label.lane_id];
+        if is_stuck {
+            **text = format!("P{}\n[STUCK]", lane_label.lane_id + 1);
+            text_color.0 = Color::srgb(1.0, 0.25, 0.25);
+        } else {
+            **text = format!("P{}\nS{}", lane_label.lane_id + 1, lane_label.lane_id + 1);
+            text_color.0 = player_color(lane_label.lane_id);
+        }
+    }
+
     for mut text in total_text_query.iter_mut() {
         if board.game_over {
             **text = format!(
-                "--- GAME OVER ---\nFINAL SCORE: {}  |  LINES CLEARED: {}",
+                "--- GAME OVER (ALL LANES STUCK) ---\nFINAL SCORE: {}  |  LINES CLEARED: {}",
                 board.score, board.lines_cleared
             );
         } else {
-            **text = format!(
-                "NANAI AUTO MULTI-FALL (WIDE FIELD)\nTOTAL SCORE: {}  |  TOTAL LINES: {}",
-                board.score, board.lines_cleared
-            );
+            let stuck_count = board.lane_stuck.iter().filter(|&&s| s).count();
+            if stuck_count > 0 {
+                **text = format!(
+                    "NANAI AUTO MULTI-FALL (WIDE FIELD)  [STUCK: {}/{}]\nTOTAL SCORE: {}  |  TOTAL LINES: {}",
+                    stuck_count, LANE_COUNT, board.score, board.lines_cleared
+                );
+            } else {
+                **text = format!(
+                    "NANAI AUTO MULTI-FALL (WIDE FIELD)\nTOTAL SCORE: {}  |  TOTAL LINES: {}",
+                    board.score, board.lines_cleared
+                );
+            }
         }
     }
 }
