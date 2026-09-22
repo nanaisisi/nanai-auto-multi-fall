@@ -32,6 +32,8 @@ pub struct LaneSignal {
     /// 空白（穴）の存在列（0..TOTAL_GRID_WIDTH）
     pub hole_x: Option<usize>,
     pub hole_status: HoleStatus,
+    /// 深さ2以上の縦穴情報: (x座標, 穴の底y座標, 穴の深さ)
+    pub vertical_well: Option<(usize, usize, usize)>,
     /// 配置予定の概算列 (人間が「ここ置くよ！」と宣言する曖昧な目安: ±1程度のブレを想定)
     pub intent_target_x: Option<i32>,
     /// 自レーンのペース
@@ -44,6 +46,7 @@ impl Default for LaneSignal {
             lane_id: 0,
             hole_x: None,
             hole_status: HoleStatus::None,
+            vertical_well: None,
             intent_target_x: None,
             pace: LanePace::Normal,
         }
@@ -83,6 +86,10 @@ pub struct FallingTromino {
     pub lock_resets_left: usize,
     pub pace: LanePace,
     pub waypoints: Vec<(i32, i32)>,
+    /// 目標着地点を決定した時点のボードバージョン（盤面変化検知用）
+    pub planned_board_version: u64,
+    /// 状況変化や予期せぬ事態に応じた定期的再計算タイマー
+    pub replan_timer: Timer,
 }
 
 

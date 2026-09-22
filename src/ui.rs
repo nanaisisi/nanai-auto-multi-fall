@@ -33,9 +33,9 @@ pub fn setup_ui(mut commands: Commands) {
         ));
     }
 
-    // 全体スコア表示
+    // 全体スコア・ライン消去数・速度表示
     commands.spawn((
-        Text2d::new("NANAI AUTO MULTI-FALL (WIDE FIELD)\nTOTAL SCORE: 0  |  TOTAL LINES: 0"),
+        Text2d::new("NANAI AUTO MULTI-FALL\nLINES CLEARED: 0 / 100  |  SCORE: 0  |  SPEED: 1.0x"),
         TextFont {
             font_size: bevy::text::FontSize::Px(18.0),
             ..default()
@@ -49,6 +49,7 @@ pub fn setup_ui(mut commands: Commands) {
 
 pub fn update_ui_system(
     board: Res<GlobalBoard>,
+    settings: Res<GameSettings>,
     mut total_text_query: Query<&mut Text2d, (With<TotalScoreText>, Without<LaneLabel>)>,
     mut lane_label_query: Query<(&LaneLabel, &mut Text2d, &mut TextColor), Without<TotalScoreText>>,
 ) {
@@ -63,23 +64,26 @@ pub fn update_ui_system(
         }
     }
 
+    let cur_interval = settings.current_base_fall_interval(board.lines_cleared);
+    let speed_multiplier = settings.initial_fall_interval / cur_interval;
+
     for mut text in total_text_query.iter_mut() {
         if board.game_over {
             **text = format!(
-                "--- GAME OVER (ALL LANES STUCK) ---\nFINAL SCORE: {}  |  LINES CLEARED: {}",
-                board.score, board.lines_cleared
+                "--- GAME OVER (ALL LANES STUCK) ---\nLINES CLEARED: {}  |  FINAL SCORE: {}",
+                board.lines_cleared, board.score
             );
         } else {
             let stuck_count = board.lane_stuck.iter().filter(|&&s| s).count();
             if stuck_count > 0 {
                 **text = format!(
-                    "NANAI AUTO MULTI-FALL (WIDE FIELD)  [STUCK: {}/{}]\nTOTAL SCORE: {}  |  TOTAL LINES: {}",
-                    stuck_count, LANE_COUNT, board.score, board.lines_cleared
+                    "NANAI AUTO MULTI-FALL  [STUCK: {}/{}]\n★ LINES CLEARED: {}  |  SCORE: {}  |  SPEED: {:.1}x",
+                    stuck_count, LANE_COUNT, board.lines_cleared, board.score, speed_multiplier
                 );
             } else {
                 **text = format!(
-                    "NANAI AUTO MULTI-FALL (WIDE FIELD)\nTOTAL SCORE: {}  |  TOTAL LINES: {}",
-                    board.score, board.lines_cleared
+                    "NANAI AUTO MULTI-FALL\n★ LINES CLEARED: {}  |  SCORE: {}  |  SPEED: {:.1}x",
+                    board.lines_cleared, board.score, speed_multiplier
                 );
             }
         }

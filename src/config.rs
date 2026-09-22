@@ -63,19 +63,20 @@ pub struct GameSettings {
 impl Default for GameSettings {
     fn default() -> Self {
         Self {
-            initial_fall_interval: 0.18, // 初期はゆったり（約5.5マス/秒）
-            min_fall_interval: 0.04,     // 最高速（25マス/秒）
+            initial_fall_interval: 0.35, // 初期はゆったり（約2.8マス/秒）見やすく快適なペース
+            min_fall_interval: 0.04,     // 最高速・困難時（25マス/秒）
             spawn_delay: 0.12,
-            soft_drop_multiplier: 0.35,  // 下キー入力時は約3倍速で高速落下
+            soft_drop_multiplier: 0.35,  // 下キー入力時は高速落下
         }
     }
 }
 
 impl GameSettings {
     /// 消去ライン数に比例して加速するシステム基準落下間隔
+    /// 100消し程度で最高速度・困難ゾーン（0.04s〜0.06s）に到達するよう設計
     pub fn current_base_fall_interval(&self, lines_cleared: u32) -> f32 {
-        // 1ライン消去ごとに 0.007秒 ずつ落下間隔が短縮
-        let speedup = lines_cleared as f32 * 0.007;
+        // 100ライン消去で約 0.30秒 短縮し、最高難易度（min_fall_interval）へ到達
+        let speedup = lines_cleared as f32 * 0.0031;
         (self.initial_fall_interval - speedup).max(self.min_fall_interval)
     }
 }

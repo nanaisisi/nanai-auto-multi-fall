@@ -9,7 +9,7 @@ pub fn is_border_column(x: usize) -> bool {
     if x >= TOTAL_GRID_WIDTH {
         return false;
     }
-    (x + 1) % (LANE_WIDTH + 1) == 0
+    (x + 1).is_multiple_of(LANE_WIDTH + 1)
 }
 
 /// レーン番号 (0..LANE_COUNT) に対応する投入口の X 範囲 (min_x..=max_x)
@@ -26,6 +26,8 @@ pub struct GlobalBoard {
     pub lines_cleared: u32,
     pub game_over: bool,
     pub lane_stuck: [bool; crate::config::LANE_COUNT],
+    /// 盤面の固定・消去が発生するたびにインクリメントされるバージョン番号
+    pub board_version: u64,
 }
 
 impl Default for GlobalBoard {
@@ -36,6 +38,7 @@ impl Default for GlobalBoard {
             lines_cleared: 0,
             game_over: false,
             lane_stuck: [false; crate::config::LANE_COUNT],
+            board_version: 0,
         }
     }
 }
@@ -112,6 +115,7 @@ impl GlobalBoard {
         }
 
         self.score += 10;
+        self.board_version = self.board_version.wrapping_add(1);
         true
     }
 
@@ -141,6 +145,7 @@ impl GlobalBoard {
         };
 
         if lines > 0 {
+            self.board_version = self.board_version.wrapping_add(1);
             // 下のブロックが消去されたため、各レーンの投入口詰まりを再評価
             for lane_id in 0..crate::config::LANE_COUNT {
                 let (min_x, max_x) = lane_x_range(lane_id);
@@ -227,6 +232,125 @@ impl GlobalBoard {
         }
 
         deepest_hole
+    }
+
+    /// レーン内の深さ2以上の縦穴（左右が壁やブロックで囲まれ、上方が空いている溝）を検出
+    /// 戻り値: (x座標, 穴の底y座標, 穴の深さ)
+    pub fn find_lane_vertical_wells(&self, lane_id: usize) -> Vec<(usize, usize, usize)> {
+        let (min_x, max_x) = lane_x_range(lane_id);
+        let heights = self.column_heights();
+        let mut wells = Vec::new();
+
+        for x in min_x..=max_x {
+            // x列の現在の高さ（一番上のブロックのy+1、ブロックがなければ0）
+            let h = heights[x];
+            if h >= LANE_HEIGHT {
+                continue;
+            }
+
+            // 左右の壁/ブロックの高さを判定
+            // xが0またはTOTAL_GRID_WIDTH-1なら盤面の外壁として扱う
+            let left_h = if x == 0 {
+                LANE_HEIGHT
+            } else {
+                heights[x - 1]
+            };
+            let right_h = if x + 1 >= TOTAL_GRID_WIDTH {
+                LANE_HEIGHT
+            } else {
+                heights[x + 1]
+            };
+
+            // 左右両方の壁のうち低い方と、現在列の高さの差が「縦穴の深さ」
+            let wall_h = left_h.min(right_h);
+            if wall_h >= h + 2 {
+                let depth = wall_h - h;
+                // 屋根（hより上のブロック）がないか確認
+                let has_roof = (h..LANE_HEIGHT).any(|y| self.cells[y][x].is_some());
+                if !has_roof {
+                    wells.push((x, h, depth));
+                }
+            }
+        }
+
+        wells
+    }
+
+    /// フィールド全体における深さ2以上の縦穴をすべて検出
+    pub fn find_all_vertical_wells(&self) -> Vec<(usize, usize, usize)> {
+        let heights = self.column_heights();
+        let mut wells = Vec::new();
+
+        for x in 0..TOTAL_GRID_WIDTH {
+            let h = heights[x];
+            if h >= LANE_HEIGHT {
+                continue;
+            }
+
+            let left_h = if x == 0 {
+                LANE_HEIGHT
+            } else {
+                heights[x - 1]
+            };
+            let right_h = if x + 1 >= TOTAL_GRID_WIDTH {
+                LANE_HEIGHT
+            } else {
+                heights[x + 1]
+            };
+
+            let wall_h = left_h.min(right_h);
+            if wall_h >= h + 2 {
+                let depth = wall_h - h;
+                let has_roof = (h..LANE_HEIGHT).any(|y| self.cells[y][x].is_some());
+                if !has_roof {
+                    wells.push((x, h, depth));
+                }
+            }
+        }
+
+        wells
+    }
+
+    /// 指定された空洞マス (cx, cy) が、幅1マスの縦穴の下または奥にあり、
+    /// かつ高さが2マス以下（I字は入れず、L字は幅1マスの縦穴を通れない）ため、
+    /// トミノで埋めることが原理的に不可能な「どうしようもない空間」かを判定
+    pub fn is_unreachable_alcove(&self, cx: usize, cy: usize) -> bool {
+        if cx >= TOTAL_GRID_WIDTH || cy >= LANE_HEIGHT || self.cells[cy][cx].is_some() {
+            return false;
+        }
+
+        // 1. 真上に屋根（オーバーハング）があるか
+        let roof_opt = (cy + 1..LANE_HEIGHT).find(|&y| self.cells[y][cx].is_some());
+        if let Some(roof_y) = roof_opt {
+            // この空洞の直上の空間の高さ (roof_y - cy) が 2 以下であれば、
+            // 縦向きI字（高さ3）は物理的に進入できない
+            let space_height = roof_y - cy;
+            if space_height <= 2 {
+                // 左右どちらかから横スライドで入れるか？
+                // 左右の入口が「幅1の縦穴」または「壁/ブロック」で塞がれているか判定
+                // 左側チェック
+                let left_inaccessible = if cx == 0 {
+                    true
+                } else {
+                    // 左の列のブロック高さが roof_y 以上なら横から入れない
+                    // または左が幅1の縦穴でL字（幅2）が進入できない
+                    self.cells[cy][cx - 1].is_some()
+                };
+                // 右側チェック
+                let right_inaccessible = if cx + 1 >= TOTAL_GRID_WIDTH {
+                    true
+                } else {
+                    self.cells[cy][cx + 1].is_some()
+                };
+
+                // もし左右とも壁・ブロックで直接横から入れず、縦穴を介してしかアクセスできない場合
+                if left_inaccessible || right_inaccessible {
+                    return true;
+                }
+            }
+        }
+
+        false
     }
 
     /// 対象ターゲット行（最もブロックが揃っている下層段）における自レーンのブロック充足率 (0.0〜1.0) を算出

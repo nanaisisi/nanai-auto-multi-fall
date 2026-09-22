@@ -9,7 +9,7 @@ pub enum TrominoKind {
 
 impl TrominoKind {
     pub fn random_from_rng(rng: &mut WyRand) -> Self {
-        if rng.next_u32() % 2 == 0 {
+        if rng.next_u32().is_multiple_of(2) {
             TrominoKind::Straight
         } else {
             TrominoKind::Corner

@@ -26,7 +26,13 @@ pub fn update_lane_signals_system(
             None => (None, HoleStatus::None),
         };
 
-        // 2. 落下中トミノ（各レーンAI）からの自己申告意図（Intent）および自己決定ペースの抽出
+        // 2. 深さ2以上の縦穴（I字で埋めたい溝）の検出
+        let vertical_well = board
+            .find_lane_vertical_wells(lane_id)
+            .into_iter()
+            .max_by_key(|&(_, _, depth)| depth);
+
+        // 3. 落下中トミノ（各レーンAI）からの自己申告意図（Intent）および自己決定ペースの抽出
         let falling_opt = falling_query.iter().find(|f| f.lane_id == lane_id);
         let intent_target_x = falling_opt.map(|f| f.target_x);
         let pace = falling_opt.map(|f| f.pace).unwrap_or(LanePace::Normal);
@@ -35,6 +41,7 @@ pub fn update_lane_signals_system(
             lane_id,
             hole_x,
             hole_status,
+            vertical_well,
             intent_target_x,
             pace,
         };
@@ -62,16 +69,33 @@ pub fn spawn_tromino_system(
         return;
     };
 
-    let mut predicted_others: Vec<PredictedPlacement> = falling_query
+    let base_interval = settings.current_base_fall_interval(board.lines_cleared);
+
+    // 各落下中トミノの残り着地ステップ数（ETA）を算出して着地予測順にソート
+    let mut falling_etas: Vec<(f32, PredictedPlacement)> = falling_query
         .iter()
-        .map(|falling| PredictedPlacement {
-            player_id: falling.lane_id,
-            kind: falling.kind,
-            rotation: falling.target_rotation,
-            target_x: falling.target_x,
-            landing_y: falling.landing_y,
+        .map(|falling| {
+            let dy = (falling.current_y - falling.landing_y as f32).max(0.0);
+            let interval = match falling.pace {
+                LanePace::SoftDrop => base_interval * settings.soft_drop_multiplier,
+                LanePace::Normal => base_interval,
+            };
+            let eta = dy * interval;
+            (
+                eta,
+                PredictedPlacement {
+                    player_id: falling.lane_id,
+                    kind: falling.kind,
+                    rotation: falling.target_rotation,
+                    target_x: falling.target_x,
+                    landing_y: falling.landing_y,
+                },
+            )
         })
         .collect();
+
+    falling_etas.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let mut predicted_others: Vec<PredictedPlacement> = falling_etas.into_iter().map(|(_, p)| p).collect();
 
     let mut air_obstacles: Vec<(i32, i32)> = Vec::new();
     for falling in falling_query.iter() {
@@ -133,7 +157,6 @@ pub fn spawn_tromino_system(
                 });
 
                 let lane_pace = m.pace;
-                let base_interval = settings.current_base_fall_interval(board.lines_cleared);
                 let fall_interval = match lane_pace {
                     LanePace::SoftDrop => base_interval * settings.soft_drop_multiplier,
                     LanePace::Normal => base_interval,
@@ -155,6 +178,8 @@ pub fn spawn_tromino_system(
                     lock_resets_left: MAX_LOCK_RESETS,
                     pace: lane_pace,
                     waypoints: m.waypoints,
+                    planned_board_version: board.board_version,
+                    replan_timer: Timer::from_seconds(0.18, TimerMode::Repeating),
                 });
 
 
@@ -260,6 +285,7 @@ pub fn falling_tromino_system(
     time: Res<Time>,
     settings: Res<GameSettings>,
     mut board: ResMut<GlobalBoard>,
+    signals: Res<LaneSignalBoard>,
     mut falling_query: Query<(Entity, &mut FallingTromino)>,
     lane_query: Query<(Entity, &LaneSlot)>,
 ) {
@@ -283,9 +309,92 @@ pub fn falling_tromino_system(
         })
         .collect();
 
+    // 空中の他トミノのセル（動的障害物）
+    let all_air_obstacles: Vec<(i32, i32)> = current_falling
+        .iter()
+        .flat_map(|(_, cells)| cells.clone())
+        .collect();
+
+    // 他トミノの着地予測リスト（落下順/ETA順にソート）
+    let base_interval = settings.current_base_fall_interval(board.lines_cleared);
+    let mut other_etas: Vec<(f32, PredictedPlacement)> = falling_query
+        .iter()
+        .map(|(_ent, f)| {
+            let dy = (f.current_y - f.landing_y as f32).max(0.0);
+            let interval = match f.pace {
+                LanePace::SoftDrop => base_interval * settings.soft_drop_multiplier,
+                LanePace::Normal => base_interval,
+            };
+            (
+                dy * interval,
+                PredictedPlacement {
+                    player_id: f.lane_id,
+                    kind: f.kind,
+                    rotation: f.target_rotation,
+                    target_x: f.target_x,
+                    landing_y: f.landing_y,
+                },
+            )
+        })
+        .collect();
+    other_etas.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let all_predicted_others: Vec<PredictedPlacement> = other_etas.into_iter().map(|(_, p)| p).collect();
+
     for (tromino_entity, mut falling) in falling_query.iter_mut() {
         let current_int_y = falling.current_y.round() as i32;
         let current_int_x = falling.current_x.round() as i32;
+
+        // 0. 落下目的地点の再計算（Dynamic Re-planning）
+        // - 盤面変化（ライン消去や他者着地で board_version が更新された）
+        // - 現在の目標着地点がすでに衝突・占有されてしまい安全に着地できない（予想外の事態）
+        // - 一定周期（replan_timer）での状況チェック
+        falling.replan_timer.tick(time.delta());
+
+        let target_invalidated = !board.can_place(
+            &falling.kind,
+            falling.target_rotation,
+            falling.target_x,
+            falling.landing_y,
+        );
+
+        let board_changed = falling.planned_board_version != board.board_version;
+        let should_replan = !falling.is_on_ground
+            && (target_invalidated || board_changed || falling.replan_timer.just_finished());
+
+        if should_replan {
+            let this_others: Vec<PredictedPlacement> = all_predicted_others
+                .iter()
+                .filter(|p| p.player_id != falling.lane_id)
+                .cloned()
+                .collect();
+
+            if let Some(re_eval) = AutoAi::find_best_move_from_position(
+                &board,
+                falling.lane_id,
+                &falling.kind,
+                current_int_x,
+                current_int_y,
+                falling.current_rotation,
+                &this_others,
+                &all_air_obstacles,
+                &signals,
+            ) {
+                // 目標地点および姿勢、ウェイポイントを最新状況に更新
+                falling.target_x = re_eval.target_x;
+                falling.landing_y = re_eval.landing_y;
+                falling.target_rotation = re_eval.rotation;
+                falling.waypoints = re_eval.waypoints;
+                falling.pace = re_eval.pace;
+                falling.planned_board_version = board.board_version;
+
+                // 落下ペースに応じたインターバル再適用
+                let fall_interval = match falling.pace {
+                    LanePace::SoftDrop => base_interval * settings.soft_drop_multiplier,
+                    LanePace::Normal => base_interval,
+                };
+                falling.fall_timer.set_duration(std::time::Duration::from_secs_f32(fall_interval));
+            }
+        }
 
         // 1. 回転処理（回転衝突判定および壁キック）
         if falling.current_rotation != falling.target_rotation {
