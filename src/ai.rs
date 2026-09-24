@@ -2,7 +2,6 @@ use crate::board::{is_border_column, lane_x_range, CompactBoard, GlobalBoard};
 use crate::config::{LANE_HEIGHT, TOTAL_GRID_WIDTH};
 use crate::game::{HoleStatus, LanePace, LaneSignalBoard};
 use crate::tromino::TrominoKind;
-use rayon::prelude::*;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -90,9 +89,9 @@ impl AutoAi {
             }
         }
 
-        // Rayon による全回転・X座標配置候補の並列シミュレーション・評価
+        // 全回転・X座標配置候補のシミュレーション・評価
         let best_move = candidates
-            .into_par_iter()
+            .into_iter()
             .filter_map(|(rot, x)| {
                 let offsets = kind.cell_offsets(rot);
                 let (landing_y, waypoints) = Self::simulate_drop_with_tuck_path(
@@ -205,9 +204,9 @@ impl AutoAi {
             }
         }
 
-        // Rayon による空中再計算の並列探索
+        // 空中再計算の探索
         let best_move = candidates
-            .into_par_iter()
+            .into_iter()
             .filter_map(|(rot, x)| {
                 let offsets = kind.cell_offsets(rot);
                 let (landing_y, waypoints) = Self::simulate_drop_from_path(
