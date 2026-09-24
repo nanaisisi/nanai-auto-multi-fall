@@ -43,9 +43,14 @@ fn main() {
                 systems::update_lane_signals_system,
                 systems::spawn_tromino_system,
                 systems::falling_tromino_system,
+            ).chain(),
+        )
+        .add_systems(
+            PostUpdate,
+            (
                 render::render_system,
                 ui::update_ui_system,
-            ).chain(),
+            ),
         )
 
         .run();

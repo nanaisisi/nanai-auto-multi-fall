@@ -1,7 +1,8 @@
-use crate::board::{is_border_column, lane_x_range, GlobalBoard};
+use crate::board::{is_border_column, lane_x_range, CompactBoard, GlobalBoard};
 use crate::config::{LANE_HEIGHT, TOTAL_GRID_WIDTH};
 use crate::game::{HoleStatus, LanePace, LaneSignalBoard};
 use crate::tromino::TrominoKind;
+use rayon::prelude::*;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -39,7 +40,6 @@ impl AutoAi {
         air_obstacles: &[(i32, i32)],
         signals: &LaneSignalBoard,
     ) -> Option<MoveEvaluation> {
-        let mut best_move: Option<MoveEvaluation> = None;
         let (lane_min_x, lane_max_x) = lane_x_range(lane_id);
 
         let mut reserved_landing_cells = Vec::new();
@@ -60,20 +60,42 @@ impl AutoAi {
             );
         }
 
+        let compact_current = board.to_compact();
+        let compact_future = future_board.to_compact();
+
+        // 自レーンAI自身による自律的なペース判定（事前計算）
+        let fill_ratio = board.lane_fill_ratio_at_target_line(lane_id);
+        let has_urgent_hole = match board.find_lane_deepest_hole(lane_id) {
+            Some((_, _, false)) => true, // 露出した穴があり急いで埋めたい
+            _ => false,
+        };
+        let autonomous_pace = if has_urgent_hole || fill_ratio < 0.35 {
+            LanePace::SoftDrop
+        } else {
+            LanePace::Normal
+        };
+
+        let mut candidates = Vec::new();
         let num_rotations = kind.rotation_count();
         for rot in 0..num_rotations {
             let offsets = kind.cell_offsets(rot);
             let min_dx = offsets.iter().map(|(dx, _)| *dx).min().unwrap();
             let max_dx = offsets.iter().map(|(dx, _)| *dx).max().unwrap();
 
-            // 探索範囲:
-            // 自分のスロットおよび両隣の境界列・隣接レーン寄り (±3マス) を探索
             let search_min_x = (lane_min_x as i32 - 3).max(-min_dx);
             let search_max_x = (lane_max_x as i32 + 3).min((TOTAL_GRID_WIDTH as i32 - 1) - max_dx);
 
             for x in search_min_x..=search_max_x {
-                // BFSによるタックイン・スライド到達可能最下段Yとウェイポイントをシミュレーション
-                if let Some((landing_y, waypoints)) = Self::simulate_drop_with_tuck_path(
+                candidates.push((rot, x));
+            }
+        }
+
+        // Rayon による全回転・X座標配置候補の並列シミュレーション・評価
+        let best_move = candidates
+            .into_par_iter()
+            .filter_map(|(rot, x)| {
+                let offsets = kind.cell_offsets(rot);
+                let (landing_y, waypoints) = Self::simulate_drop_with_tuck_path(
                     &future_board,
                     lane_id,
                     kind,
@@ -81,59 +103,43 @@ impl AutoAi {
                     x,
                     &reserved_landing_cells,
                     air_obstacles,
-                ) {
-                    let mut collides = false;
-                    for (dx, dy) in &offsets {
-                        let cx = x + dx;
-                        let cy = landing_y + dy;
-                        if reserved_landing_cells.contains(&(cx, cy)) {
-                            collides = true;
-                            break;
-                        }
-                    }
-                    if collides {
-                        continue;
-                    }
+                )?;
 
-                    let eval_score = Self::evaluate_placement(
-                        board,
-                        &future_board,
-                        lane_id,
-                        kind,
-                        rot,
-                        x,
-                        landing_y,
-                        predicted_others,
-                        signals,
-                    );
-
-                    if best_move.is_none() || eval_score > best_move.as_ref().unwrap().score {
-                        // 自レーンAI自身による自律的なペース判定:
-                        // 自レーンのターゲット行進捗度や穴の有無を評価して、自らの意志で落下速度方針を決定
-                        let fill_ratio = board.lane_fill_ratio_at_target_line(lane_id);
-                        let has_urgent_hole = match board.find_lane_deepest_hole(lane_id) {
-                            Some((_, _, false)) => true, // 露出した穴があり急いで埋めたい
-                            _ => false,
-                        };
-
-                        let autonomous_pace = if has_urgent_hole || fill_ratio < 0.35 {
-                            LanePace::SoftDrop // 穴埋めまたはライン形成の遅れのため自発的に下キー入力（急降下）
-                        } else {
-                            LanePace::Normal // 揃っている・待機状態の場合は下キーを押さず、自然落下速度のまま慎重に運ぶ
-                        };
-
-                        best_move = Some(MoveEvaluation {
-                            rotation: rot,
-                            target_x: x,
-                            landing_y,
-                            score: eval_score,
-                            pace: autonomous_pace,
-                            waypoints,
-                        });
+                let mut collides = false;
+                for (dx, dy) in &offsets {
+                    let cx = x + dx;
+                    let cy = landing_y + dy;
+                    if reserved_landing_cells.contains(&(cx, cy)) {
+                        collides = true;
+                        break;
                     }
                 }
-            }
-        }
+                if collides {
+                    return None;
+                }
+
+                let eval_score = Self::evaluate_placement_compact(
+                    &compact_current,
+                    &compact_future,
+                    lane_id,
+                    kind,
+                    rot,
+                    x,
+                    landing_y,
+                    predicted_others,
+                    signals,
+                );
+
+                Some(MoveEvaluation {
+                    rotation: rot,
+                    target_x: x,
+                    landing_y,
+                    score: eval_score,
+                    pace: autonomous_pace,
+                    waypoints,
+                })
+            })
+            .max_by(|a, b| a.score.partial_cmp(&b.score).unwrap_or(std::cmp::Ordering::Equal));
 
         best_move
     }
@@ -150,7 +156,6 @@ impl AutoAi {
         _air_obstacles: &[(i32, i32)],
         signals: &LaneSignalBoard,
     ) -> Option<MoveEvaluation> {
-        let mut best_move: Option<MoveEvaluation> = None;
         let (lane_min_x, lane_max_x) = lane_x_range(lane_id);
 
         let mut reserved_landing_cells = Vec::new();
@@ -171,18 +176,41 @@ impl AutoAi {
             );
         }
 
+        let compact_current = board.to_compact();
+        let compact_future = future_board.to_compact();
+
+        let fill_ratio = board.lane_fill_ratio_at_target_line(lane_id);
+        let has_urgent_hole = match board.find_lane_deepest_hole(lane_id) {
+            Some((_, _, false)) => true,
+            _ => false,
+        };
+        let autonomous_pace = if has_urgent_hole || fill_ratio < 0.35 {
+            LanePace::SoftDrop
+        } else {
+            LanePace::Normal
+        };
+
+        let mut candidates = Vec::new();
         let num_rotations = kind.rotation_count();
         for rot in 0..num_rotations {
             let offsets = kind.cell_offsets(rot);
             let min_dx = offsets.iter().map(|(dx, _)| *dx).min().unwrap();
             let max_dx = offsets.iter().map(|(dx, _)| *dx).max().unwrap();
 
-            // 現在地および自レーン付近の合法範囲を探索
             let search_min_x = (lane_min_x as i32 - 3).max(-min_dx).min(current_x - 3);
             let search_max_x = (lane_max_x as i32 + 3).min((TOTAL_GRID_WIDTH as i32 - 1) - max_dx).max(current_x + 3);
 
             for x in search_min_x..=search_max_x {
-                if let Some((landing_y, waypoints)) = Self::simulate_drop_from_path(
+                candidates.push((rot, x));
+            }
+        }
+
+        // Rayon による空中再計算の並列探索
+        let best_move = candidates
+            .into_par_iter()
+            .filter_map(|(rot, x)| {
+                let offsets = kind.cell_offsets(rot);
+                let (landing_y, waypoints) = Self::simulate_drop_from_path(
                     &future_board,
                     kind,
                     current_rotation,
@@ -191,57 +219,43 @@ impl AutoAi {
                     current_y,
                     x,
                     &reserved_landing_cells,
-                ) {
-                    let mut collides = false;
-                    for (dx, dy) in &offsets {
-                        let cx = x + dx;
-                        let cy = landing_y + dy;
-                        if reserved_landing_cells.contains(&(cx, cy)) {
-                            collides = true;
-                            break;
-                        }
-                    }
-                    if collides {
-                        continue;
-                    }
+                )?;
 
-                    let eval_score = Self::evaluate_placement(
-                        board,
-                        &future_board,
-                        lane_id,
-                        kind,
-                        rot,
-                        x,
-                        landing_y,
-                        predicted_others,
-                        signals,
-                    );
-
-                    if best_move.is_none() || eval_score > best_move.as_ref().unwrap().score {
-                        let fill_ratio = board.lane_fill_ratio_at_target_line(lane_id);
-                        let has_urgent_hole = match board.find_lane_deepest_hole(lane_id) {
-                            Some((_, _, false)) => true,
-                            _ => false,
-                        };
-
-                        let autonomous_pace = if has_urgent_hole || fill_ratio < 0.35 {
-                            LanePace::SoftDrop
-                        } else {
-                            LanePace::Normal
-                        };
-
-                        best_move = Some(MoveEvaluation {
-                            rotation: rot,
-                            target_x: x,
-                            landing_y,
-                            score: eval_score,
-                            pace: autonomous_pace,
-                            waypoints,
-                        });
+                let mut collides = false;
+                for (dx, dy) in &offsets {
+                    let cx = x + dx;
+                    let cy = landing_y + dy;
+                    if reserved_landing_cells.contains(&(cx, cy)) {
+                        collides = true;
+                        break;
                     }
                 }
-            }
-        }
+                if collides {
+                    return None;
+                }
+
+                let eval_score = Self::evaluate_placement_compact(
+                    &compact_current,
+                    &compact_future,
+                    lane_id,
+                    kind,
+                    rot,
+                    x,
+                    landing_y,
+                    predicted_others,
+                    signals,
+                );
+
+                Some(MoveEvaluation {
+                    rotation: rot,
+                    target_x: x,
+                    landing_y,
+                    score: eval_score,
+                    pace: autonomous_pace,
+                    waypoints,
+                })
+            })
+            .max_by(|a, b| a.score.partial_cmp(&b.score).unwrap_or(std::cmp::Ordering::Equal));
 
         best_move
     }
@@ -639,7 +653,276 @@ impl AutoAi {
         true
     }
 
+    /// ビットマスク版CompactBoardを用いたゼロアロケーション・高速評価関数
+    pub fn evaluate_placement_compact(
+        current_board: &CompactBoard,
+        future_board: &CompactBoard,
+        player_id: usize,
+        kind: &TrominoKind,
+        rot: usize,
+        x: i32,
+        y: i32,
+        predicted_others: &[PredictedPlacement],
+        signals: &LaneSignalBoard,
+    ) -> f32 {
+        let mut sim_future = *future_board;
+        sim_future.lock_tromino(kind, rot, x, y);
+        let future_lines = sim_future.clear_full_lines();
+
+        let mut sim_alone = *current_board;
+        sim_alone.lock_tromino(kind, rot, x, y);
+        let alone_lines = sim_alone.clear_full_lines();
+
+        let cooperative_lines = future_lines.saturating_sub(alone_lines);
+
+        let heights = sim_future.column_heights();
+        let max_height = *heights.iter().max().unwrap_or(&0) as f32;
+        let sum_height: f32 = heights.iter().map(|&h| h as f32).sum();
+        let holes = sim_future.count_holes() as f32;
+
+        let mut bumpiness = 0.0;
+        for i in 0..(TOTAL_GRID_WIDTH - 1) {
+            bumpiness += (heights[i] as f32 - heights[i + 1] as f32).abs();
+        }
+
+        let offsets = kind.cell_offsets(rot);
+        let mut border_cell_count = 0;
+        for (dx, _) in &offsets {
+            let cx = (x + dx) as usize;
+            if is_border_column(cx) {
+                border_cell_count += 1;
+            }
+        }
+
+        let mut border_bridge_bonus = 0.0;
+        let mut border_barrier_penalty = 0.0;
+
+        if border_cell_count > 0 {
+            let is_vertical_straight = matches!(kind, TrominoKind::Straight) && (rot % 2 == 1);
+            if is_vertical_straight && border_cell_count == 3 {
+                let border_col = x as usize;
+                let existing_h = current_board.column_heights()[border_col];
+                if existing_h > 0 {
+                    border_barrier_penalty -= 350.0;
+                } else {
+                    border_barrier_penalty -= 220.0;
+                }
+            } else {
+                border_bridge_bonus = border_cell_count as f32 * 18.0;
+            }
+        }
+
+        let mut adjacency_bonus = 0.0;
+        for other in predicted_others {
+            let other_offsets = other.kind.cell_offsets(other.rotation);
+            for (dx1, dy1) in &offsets {
+                let my_c = (x + dx1, y + dy1);
+                for (dx2, dy2) in &other_offsets {
+                    let ot_c = (other.target_x + dx2, other.landing_y + dy2);
+                    let dist = (my_c.0 - ot_c.0).abs() + (my_c.1 - ot_c.1).abs();
+                    if dist == 1 {
+                        adjacency_bonus += 6.0;
+                    }
+                }
+            }
+        }
+
+        // 1. 空白フタ防止ペナルティ & 凹み・穴埋めボーナス
+        let mut anti_roof_penalty = 0.0;
+        let mut hole_fill_bonus = 0.0;
+
+        for (dx, dy) in &offsets {
+            let cx = x + dx;
+            let cy = y + dy;
+            if cx >= 0 && (cx as usize) < TOTAL_GRID_WIDTH {
+                let cx_u = cx as usize;
+                let bit = 1u32 << cx_u;
+                let had_roof_above = (cy as usize + 1..LANE_HEIGHT)
+                    .any(|above_y| (future_board.rows[above_y] & bit) != 0);
+
+                if had_roof_above {
+                    hole_fill_bonus += 65.0;
+                }
+
+                let max_check_y = cy.min(LANE_HEIGHT as i32);
+                for under_y in 0..max_check_y {
+                    let under_y_u = under_y as usize;
+                    if (sim_future.rows[under_y_u] & bit) == 0 {
+                        let is_unreachable = future_board.is_unreachable_alcove(cx_u, under_y_u);
+                        if is_unreachable {
+                            anti_roof_penalty -= 5.0;
+                            continue;
+                        }
+
+                        let already_blocked_before = (under_y_u + 1..LANE_HEIGHT)
+                            .any(|above_y| (future_board.rows[above_y] & bit) != 0);
+
+                        if !already_blocked_before {
+                            anti_roof_penalty -= 80.0;
+                        } else {
+                            anti_roof_penalty -= 5.0;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. 限定シグナルに基づく協調支援と配慮
+        let mut signal_cooperation_bonus = 0.0;
+        let mut non_interference_penalty = 0.0;
+
+        let mut active_vertical_wells: Vec<(usize, usize, usize, usize)> = Vec::new();
+        for (wx, wy, wdepth) in future_board.find_lane_vertical_wells(player_id) {
+            active_vertical_wells.push((player_id, wx, wy, wdepth));
+        }
+        for other_signal in &signals.signals {
+            if other_signal.lane_id != player_id
+                && let Some((wx, wy, wdepth)) = other_signal.vertical_well {
+                    active_vertical_wells.push((other_signal.lane_id, wx, wy, wdepth));
+                }
+        }
+
+        let mut well_cooperation_bonus = 0.0;
+        let mut well_capping_penalty = 0.0;
+
+        for &(well_lane_id, wx, wy, wdepth) in &active_vertical_wells {
+            let is_own_or_neighbor = (well_lane_id as i32 - player_id as i32).abs() <= 1;
+            if !is_own_or_neighbor {
+                continue;
+            }
+
+            let is_neighbor = (well_lane_id as i32 - player_id as i32).abs() == 1;
+
+            match kind {
+                TrominoKind::Straight => {
+                    if rot % 2 == 1 && x == wx as i32 && y <= wy as i32 {
+                        let bonus = match wdepth {
+                            2 => 220.0,
+                            3 => 320.0,
+                            _ => 260.0,
+                        };
+                        if is_neighbor {
+                            well_cooperation_bonus += bonus * 1.5;
+                        } else {
+                            well_cooperation_bonus += bonus;
+                        }
+                    }
+                }
+                TrominoKind::Corner => {
+                    let covers_well_col = offsets.iter().any(|(dx, _)| (x + dx) == wx as i32);
+                    if covers_well_col {
+                        let lands_above_bottom = offsets.iter().any(|(dx, dy)| (x + dx) == wx as i32 && (y + dy) > wy as i32);
+                        if lands_above_bottom {
+                            well_capping_penalty -= 280.0;
+                        }
+                    }
+                }
+            }
+        }
+
+        let future_wells = sim_future.find_all_vertical_wells();
+        let prev_wells = future_board.find_all_vertical_wells();
+        let mut well_creation_penalty = 0.0;
+
+        for &(fw_x, _, fw_depth) in &future_wells {
+            let prev_depth = prev_wells
+                .iter()
+                .find(|&&(pw_x, _, _)| pw_x == fw_x)
+                .map(|&(_, _, pd)| pd)
+                .unwrap_or(0);
+
+            if fw_depth >= 2 && fw_depth > prev_depth {
+                let penalty = match fw_depth {
+                    2 => 180.0,
+                    3 => 280.0,
+                    _ => 360.0,
+                };
+                well_creation_penalty -= penalty;
+            }
+        }
+
+        for other_signal in &signals.signals {
+            if other_signal.lane_id == player_id {
+                continue;
+            }
+
+            let is_neighbor = (other_signal.lane_id as i32 - player_id as i32).abs() == 1;
+
+            if let Some(hx) = other_signal.hole_x {
+                match other_signal.hole_status {
+                    HoleStatus::WaitingForClearance => {
+                        for (dx, _) in &offsets {
+                            if (x + dx) == hx as i32 {
+                                non_interference_penalty -= 120.0;
+                            }
+                        }
+                    }
+                    HoleStatus::ReadyForFill => {
+                        if is_neighbor {
+                            for (dx, _) in &offsets {
+                                if (x + dx) == hx as i32 {
+                                    signal_cooperation_bonus += 140.0;
+                                }
+                            }
+                        }
+                    }
+                    HoleStatus::None => {}
+                }
+            }
+
+            if let Some(intent_x) = other_signal.intent_target_x {
+                for (dx, _) in &offsets {
+                    let cx = x + dx;
+                    if (cx - intent_x).abs() <= 1 && is_neighbor {
+                        non_interference_penalty -= 25.0;
+                    }
+                }
+            }
+
+            if is_neighbor && other_signal.pace == crate::game::LanePace::SoftDrop {
+                for (dx, _) in &offsets {
+                    let cx = x + dx;
+                    if (cx as usize) < TOTAL_GRID_WIDTH && is_border_column(cx as usize) {
+                        non_interference_penalty -= 10.0;
+                    }
+                }
+            }
+        }
+
+        // 3. レーン中心からの距離ペナルティ
+        let (lane_min_x, lane_max_x) = lane_x_range(player_id);
+        let lane_center_x = (lane_min_x + lane_max_x) as f32 / 2.0;
+        let dist_from_lane = (x as f32 - lane_center_x).abs();
+        let dist_penalty = dist_from_lane * -3.5;
+
+        let line_weight = 250.0;
+        let cooperative_bonus_weight = 350.0;
+        let height_weight = -1.2;
+        let max_height_weight = -2.5;
+        let holes_weight = -30.0;
+        let bumpiness_weight = -1.8;
+
+        (future_lines as f32 * line_weight)
+            + (cooperative_lines as f32 * cooperative_bonus_weight)
+            + border_bridge_bonus
+            + border_barrier_penalty
+            + adjacency_bonus
+            + anti_roof_penalty
+            + hole_fill_bonus
+            + signal_cooperation_bonus
+            + well_cooperation_bonus
+            + well_capping_penalty
+            + well_creation_penalty
+            + non_interference_penalty
+            + dist_penalty
+            + (sum_height * height_weight)
+            + (max_height * max_height_weight)
+            + (holes * holes_weight)
+            + (bumpiness * bumpiness_weight)
+    }
+
     /// 評価関数（空白フタ防止・人間的な曖昧シグナル支援・隣レーン不干渉を含む）
+    #[allow(dead_code)]
     fn evaluate_placement(
         current_board: &GlobalBoard,
         future_board: &GlobalBoard,
