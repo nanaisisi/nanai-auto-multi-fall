@@ -59,7 +59,9 @@ pub fn handle_lane_stuck(
         logger.log_raw(&board.render_ascii());
     }
 
-    commands.entity(lane_entity).insert(crate::game::LaneSpawnCooldown {
-        timer: Timer::from_seconds(0.25, TimerMode::Once),
-    });
+    commands
+        .entity(lane_entity)
+        .insert(crate::game::LaneSpawnCooldown {
+            timer: Timer::from_seconds(0.25, TimerMode::Once),
+        });
 }

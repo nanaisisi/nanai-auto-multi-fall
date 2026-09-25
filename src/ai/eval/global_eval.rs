@@ -50,10 +50,7 @@ pub fn evaluate_roof_and_hole_global(
 }
 
 /// GlobalBoard用の深さ2以上の縦穴新規作成ペナルティ
-pub fn evaluate_well_creation_global(
-    future_board: &GlobalBoard,
-    sim_future: &GlobalBoard,
-) -> f32 {
+pub fn evaluate_well_creation_global(future_board: &GlobalBoard, sim_future: &GlobalBoard) -> f32 {
     let future_wells = sim_future.find_all_vertical_wells();
     let prev_wells = future_board.find_all_vertical_wells();
     let mut well_creation_penalty = 0.0;

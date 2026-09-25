@@ -53,9 +53,7 @@ pub fn simulate_direct_drop(
     }
 
     let mut y = sim_start_y;
-    while y > 0
-        && can_place_check(board, kind, rot, target_x, y - 1, reserved_landing_cells)
-    {
+    while y > 0 && can_place_check(board, kind, rot, target_x, y - 1, reserved_landing_cells) {
         y -= 1;
     }
 
@@ -124,8 +122,8 @@ pub fn simulate_drop_with_tuck_path(
     let mut lowest_target_y: Option<i32> = None;
 
     while let Some((cx, cy)) = queue.pop_front() {
-        let can_move_down = cy > 0
-            && can_place_check(board, kind, rot, cx, cy - 1, reserved_landing_cells);
+        let can_move_down =
+            cy > 0 && can_place_check(board, kind, rot, cx, cy - 1, reserved_landing_cells);
 
         if !can_move_down && cx == target_x {
             match lowest_target_y {

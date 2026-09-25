@@ -107,9 +107,8 @@ impl Evaluator {
         let lines_val = future_lines as f32 * LINE_WEIGHT + hole_clearance_bonus + row_fill_bonus;
         let coop_lines_val = cooperative_lines as f32 * COOPERATIVE_BONUS_WEIGHT;
         let holes_val = holes * HOLES_WEIGHT_COMPACT;
-        let height_val = (sum_height * HEIGHT_WEIGHT)
-            + (max_height * MAX_HEIGHT_WEIGHT)
-            + bottom_priority_bonus;
+        let height_val =
+            (sum_height * HEIGHT_WEIGHT) + (max_height * MAX_HEIGHT_WEIGHT) + bottom_priority_bonus;
         let bumpiness_val = bumpiness * BUMPINESS_WEIGHT;
         let border_val = border_bridge_bonus + border_barrier_penalty;
         let well_val = well_cooperation_bonus + well_capping_penalty + well_creation_penalty;

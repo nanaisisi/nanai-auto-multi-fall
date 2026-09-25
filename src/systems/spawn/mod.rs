@@ -5,8 +5,8 @@ pub use prep::{collect_air_obstacles, collect_sorted_predictions};
 pub use stuck::handle_lane_stuck;
 
 use crate::ai::{AutoAi, PredictedPlacement};
-use crate::board::{GlobalBoard, lane_x_range};
-use crate::config::{GameSettings, LANE_HEIGHT, LOCK_DELAY, MAX_LOCK_RESETS};
+use crate::board::GlobalBoard;
+use crate::config::GameSettings;
 use crate::game::{
     FallingTromino, GameLogger, LanePace, LaneSignalBoard, LaneSlot, LaneSpawnCooldown,
 };
@@ -55,9 +55,7 @@ pub fn spawn_tromino_system(
             commands.entity(lane_entity).remove::<LaneSpawnCooldown>();
         }
 
-        let (lane_min_x, _) = lane_x_range(lane.id);
-        let start_x = lane_min_x as f32;
-        let start_y = (LANE_HEIGHT - 1) as f32;
+        let (start_x, start_y) = GlobalBoard::lane_spawn_origin(lane.id);
 
         let kind = TrominoKind::random_from_rng(&mut rng);
 
@@ -113,25 +111,20 @@ pub fn spawn_tromino_system(
                     LanePace::Normal => base_interval,
                 };
 
-                commands.spawn(FallingTromino {
-                    lane_id: lane.id,
+                commands.spawn(FallingTromino::new_spawned(
+                    lane.id,
                     kind,
-                    current_rotation: initial_rotation,
-                    target_rotation: m.rotation,
-                    current_x: start_x,
-                    current_y: start_y,
-                    target_x: m.target_x,
-                    landing_y: m.landing_y,
-                    fall_timer: Timer::from_seconds(fall_interval, TimerMode::Repeating),
-                    lock_timer: Timer::from_seconds(LOCK_DELAY, TimerMode::Once),
-                    rotate_timer: Timer::from_seconds(0.08, TimerMode::Repeating),
-                    is_on_ground: false,
-                    lock_resets_left: MAX_LOCK_RESETS,
-                    pace: lane_pace,
-                    waypoints: m.waypoints,
-                    planned_board_version: board.board_version,
-                    replan_timer: Timer::from_seconds(0.60, TimerMode::Repeating),
-                });
+                    initial_rotation,
+                    m.rotation,
+                    start_x,
+                    start_y,
+                    m.target_x,
+                    m.landing_y,
+                    fall_interval,
+                    lane_pace,
+                    m.waypoints,
+                    board.board_version,
+                ));
             }
             None => {
                 handle_lane_stuck(

@@ -24,6 +24,11 @@ pub fn lane_x_range(lane_id: usize) -> (usize, usize) {
 }
 
 impl GlobalBoard {
+    /// 指定レーンの投入口スポーン開始座標 (x, y) を取得
+    pub fn lane_spawn_origin(lane_id: usize) -> (f32, f32) {
+        let (lane_min_x, _) = lane_x_range(lane_id);
+        (lane_min_x as f32, (LANE_HEIGHT - 1) as f32)
+    }
     /// ビットマスク表現の軽量盤面（Copy可能・ゼロアロケーション）を生成
     pub fn to_compact(&self) -> CompactBoard {
         let mut rows = [0u32; LANE_HEIGHT];

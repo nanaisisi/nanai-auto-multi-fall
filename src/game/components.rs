@@ -31,6 +31,45 @@ pub struct FallingTromino {
     pub replan_timer: Timer,
 }
 
+impl FallingTromino {
+    /// 新規トミノのスポーン時生成ヘルパー
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_spawned(
+        lane_id: usize,
+        kind: TrominoKind,
+        initial_rotation: usize,
+        target_rotation: usize,
+        start_x: f32,
+        start_y: f32,
+        target_x: i32,
+        landing_y: i32,
+        fall_interval: f32,
+        pace: LanePace,
+        waypoints: Vec<(i32, i32)>,
+        board_version: u64,
+    ) -> Self {
+        Self {
+            lane_id,
+            kind,
+            current_rotation: initial_rotation,
+            target_rotation,
+            current_x: start_x,
+            current_y: start_y,
+            target_x,
+            landing_y,
+            fall_timer: Timer::from_seconds(fall_interval, TimerMode::Repeating),
+            lock_timer: Timer::from_seconds(crate::config::LOCK_DELAY, TimerMode::Once),
+            rotate_timer: Timer::from_seconds(0.08, TimerMode::Repeating),
+            is_on_ground: false,
+            lock_resets_left: crate::config::MAX_LOCK_RESETS,
+            pace,
+            waypoints,
+            planned_board_version: board_version,
+            replan_timer: Timer::from_seconds(0.60, TimerMode::Repeating),
+        }
+    }
+}
+
 #[derive(Component)]
 pub struct LaneSpawnCooldown {
     pub timer: Timer,

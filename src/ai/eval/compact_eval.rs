@@ -81,11 +81,7 @@ pub fn evaluate_well_creation_compact(
 }
 
 /// CompactBoard用のライン消去へ向けた行埋め進行度ボーナス
-pub fn evaluate_row_fill_compact(
-    sim_future: &CompactBoard,
-    offsets: &[(i32, i32)],
-    y: i32,
-) -> f32 {
+pub fn evaluate_row_fill_compact(sim_future: &CompactBoard, offsets: &[(i32, i32)], y: i32) -> f32 {
     let mut row_fill_bonus = 0.0;
     for (dy, _) in offsets.iter() {
         let row_idx = (y + dy) as usize;

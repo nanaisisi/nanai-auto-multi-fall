@@ -78,8 +78,8 @@ fn test_hole_detection_and_progress_pacing() {
 
     let kind = TrominoKind::Straight;
     let signals = crate::game::LaneSignalBoard::default();
-    let best_move =
-        crate::ai::AutoAi::find_best_move(&board, 0, &kind, &[], &[], &signals).expect("Move found");
+    let best_move = crate::ai::AutoAi::find_best_move(&board, 0, &kind, &[], &[], &signals)
+        .expect("Move found");
     assert_eq!(best_move.pace, crate::game::LanePace::SoftDrop);
 }
 

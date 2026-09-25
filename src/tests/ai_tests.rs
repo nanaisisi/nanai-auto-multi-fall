@@ -102,9 +102,8 @@ fn test_straight_cooperatively_fills_neighbor_vertical_well() {
     let mut signals = crate::game::LaneSignalBoard::default();
     signals.signals[1].vertical_well = Some((5, 0, 2));
 
-    let best_move =
-        AutoAi::find_best_move(&board, 0, &TrominoKind::Straight, &[], &[], &signals)
-            .expect("Move found for Straight");
+    let best_move = AutoAi::find_best_move(&board, 0, &TrominoKind::Straight, &[], &[], &signals)
+        .expect("Move found for Straight");
 
     assert_eq!(
         best_move.rotation % 2,
@@ -127,9 +126,8 @@ fn test_straight_avoids_vertical_barrier_on_border() {
     board.cells[0][3] = Some(player_color(0));
 
     let signals = crate::game::LaneSignalBoard::default();
-    let best_move =
-        AutoAi::find_best_move(&board, 0, &TrominoKind::Straight, &[], &[], &signals)
-            .expect("Move found for Straight");
+    let best_move = AutoAi::find_best_move(&board, 0, &TrominoKind::Straight, &[], &[], &signals)
+        .expect("Move found for Straight");
 
     let is_vertical_on_border = (best_move.rotation % 2 == 1) && best_move.target_x == 3;
     assert!(
@@ -143,9 +141,8 @@ fn test_ai_avoids_creating_deep_vertical_well() {
     let board = GlobalBoard::default();
     let signals = crate::game::LaneSignalBoard::default();
 
-    let best_move =
-        AutoAi::find_best_move(&board, 0, &TrominoKind::Straight, &[], &[], &signals)
-            .expect("Move found for Straight");
+    let best_move = AutoAi::find_best_move(&board, 0, &TrominoKind::Straight, &[], &[], &signals)
+        .expect("Move found for Straight");
 
     assert_eq!(
         best_move.rotation % 2,
@@ -169,9 +166,8 @@ fn test_prioritizes_filling_well_even_with_unreachable_alcove() {
     );
 
     let signals = crate::game::LaneSignalBoard::default();
-    let best_move =
-        AutoAi::find_best_move(&board, 0, &TrominoKind::Straight, &[], &[], &signals)
-            .expect("Move found for Straight");
+    let best_move = AutoAi::find_best_move(&board, 0, &TrominoKind::Straight, &[], &[], &signals)
+        .expect("Move found for Straight");
 
     assert_eq!(best_move.rotation % 2, 1, "Should choose vertical Straight");
     assert_eq!(

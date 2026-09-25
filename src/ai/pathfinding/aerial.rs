@@ -33,15 +33,7 @@ pub fn simulate_drop_from_path(
         )
     {
         let mut y = start_y;
-        while y > 0
-            && can_place_check(
-                board,
-                kind,
-                to_rot,
-                target_x,
-                y - 1,
-                reserved_landing_cells,
-            )
+        while y > 0 && can_place_check(board, kind, to_rot, target_x, y - 1, reserved_landing_cells)
         {
             y -= 1;
         }
@@ -89,8 +81,8 @@ pub fn simulate_drop_from_path(
     let mut lowest_target_y: Option<i32> = None;
 
     while let Some((cx, cy)) = queue.pop_front() {
-        let can_move_down = cy > 0
-            && can_place_check(board, kind, to_rot, cx, cy - 1, reserved_landing_cells);
+        let can_move_down =
+            cy > 0 && can_place_check(board, kind, to_rot, cx, cy - 1, reserved_landing_cells);
 
         if !can_move_down && cx == target_x {
             match lowest_target_y {

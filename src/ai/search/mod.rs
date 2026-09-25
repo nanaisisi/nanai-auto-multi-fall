@@ -4,7 +4,9 @@ pub mod spawn_search;
 
 pub use aerial_search::find_best_aerial_move;
 #[allow(unused_imports)]
-pub use candidates::{determine_autonomous_pace, generate_aerial_candidates, generate_spawn_candidates};
+pub use candidates::{
+    determine_autonomous_pace, generate_aerial_candidates, generate_spawn_candidates,
+};
 pub use spawn_search::find_best_spawn_move;
 
 use crate::ai::eval::Evaluator;
@@ -27,7 +29,14 @@ impl AutoAi {
         air_obstacles: &[(i32, i32)],
         signals: &LaneSignalBoard,
     ) -> Option<MoveEvaluation> {
-        find_best_spawn_move(board, lane_id, kind, predicted_others, air_obstacles, signals)
+        find_best_spawn_move(
+            board,
+            lane_id,
+            kind,
+            predicted_others,
+            air_obstacles,
+            signals,
+        )
     }
 
     /// 落下中の空中現在位置から再計算を行うメソッド（現在の予定に対するコミットメント維持ボーナス対応）
