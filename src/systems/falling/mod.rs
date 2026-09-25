@@ -1,89 +1,16 @@
-use crate::ai::{AutoAi, PredictedPlacement};
+pub mod collision;
+pub mod lock;
+pub mod replan;
+
+pub use collision::{check_position_collision, try_rotate_with_kick};
+pub use lock::handle_lock_process;
+pub use replan::update_replan_if_needed;
+
+use crate::ai::PredictedPlacement;
 use crate::board::{GlobalBoard, lane_x_range};
 use crate::config::{GameSettings, SPAWN_WALL_MIN_Y};
-use crate::game::{
-    FallingTromino, GameLogger, LanePace, LaneSignalBoard, LaneSlot, LaneSpawnCooldown,
-};
-use crate::tromino::TrominoKind;
+use crate::game::{FallingTromino, GameLogger, LanePace, LaneSignalBoard, LaneSlot};
 use bevy::prelude::*;
-
-/// 指定した (x, y, rotation) においてトミノが盤面（壁・固定ブロック）および他トミノと衝突するか判定
-pub fn check_position_collision(
-    board: &GlobalBoard,
-    kind: &TrominoKind,
-    rotation: usize,
-    x: i32,
-    y: i32,
-    this_entity: Entity,
-    current_falling: &[(Entity, Vec<(i32, i32)>)],
-) -> bool {
-    let offsets = kind.cell_offsets(rotation);
-
-    for (dx, dy) in &offsets {
-        let cx = x + dx;
-        let cy = y + dy;
-
-        // 1. 盤面の壁・固定ブロックとの衝突
-        if board.is_occupied(cx, cy) {
-            return true;
-        }
-
-        // 2. 落下中の他のトミノとの衝突
-        for (other_entity, other_cells) in current_falling {
-            if *other_entity == this_entity {
-                continue;
-            }
-            if other_cells.contains(&(cx, cy)) {
-                return true;
-            }
-        }
-    }
-
-    false
-}
-
-/// 回転衝突判定＆壁キック（Wall Kick）処理
-/// 回転先が塞がれている場合、キック候補 (dx, dy) を試して安全な位置へシフト。
-/// どこにもキックできない場合は None（回転失敗）を返す
-#[allow(clippy::too_many_arguments)]
-pub fn try_rotate_with_kick(
-    board: &GlobalBoard,
-    kind: &TrominoKind,
-    from_rot: usize,
-    to_rot: usize,
-    cur_x: i32,
-    cur_y: i32,
-    this_entity: Entity,
-    current_falling: &[(Entity, Vec<(i32, i32)>)],
-) -> Option<(i32, i32)> {
-    if from_rot == to_rot {
-        return Some((cur_x, cur_y));
-    }
-
-    // キック候補オフセット: (0, 0) その場 -> (-1, 0) 左 -> (+1, 0) 右 -> (0, +1) 上 -> (-1, +1) -> (+1, +1)
-    let kick_offsets = [(0, 0), (-1, 0), (1, 0), (0, 1), (-1, 1), (1, 1), (0, -1)];
-
-    for (kdx, kdy) in kick_offsets {
-        let test_x = cur_x + kdx;
-        let test_y = cur_y + kdy;
-
-        let collides = check_position_collision(
-            board,
-            kind,
-            to_rot,
-            test_x,
-            test_y,
-            this_entity,
-            current_falling,
-        );
-
-        if !collides {
-            return Some((test_x, test_y));
-        }
-    }
-
-    None
-}
 
 /// 落下・移動処理システム（移動・回転の完全衝突判定付き）
 #[allow(clippy::too_many_arguments)]
@@ -145,6 +72,7 @@ pub fn falling_tromino_system(
             )
         })
         .collect();
+
     other_etas.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
     let all_predicted_others: Vec<PredictedPlacement> =
         other_etas.into_iter().map(|(_, p)| p).collect();
@@ -154,85 +82,27 @@ pub fn falling_tromino_system(
         let current_int_x = falling.current_x.round() as i32;
 
         // 0. 落下目的地点の再計算（Dynamic Re-planning）
-        falling.replan_timer.tick(time.delta());
-
-        let target_invalidated = !board.can_place(
-            &falling.kind,
-            falling.target_rotation,
-            falling.target_x,
-            falling.landing_y,
+        update_replan_if_needed(
+            &mut falling,
+            &board,
+            &all_predicted_others,
+            &all_air_obstacles,
+            &signals,
+            &settings,
+            base_interval,
+            &mut logger,
+            current_int_x,
+            current_int_y,
+            time.delta(),
         );
-
-        let board_changed = falling.planned_board_version != board.board_version;
-        let should_replan = !falling.is_on_ground
-            && (target_invalidated || board_changed || falling.replan_timer.just_finished());
-
-        if should_replan {
-            let this_others: Vec<PredictedPlacement> = all_predicted_others
-                .iter()
-                .filter(|p| p.player_id != falling.lane_id)
-                .cloned()
-                .collect();
-
-            if let Some(re_eval) = AutoAi::find_best_move_from_position(
-                &board,
-                falling.lane_id,
-                &falling.kind,
-                current_int_x,
-                current_int_y,
-                falling.current_rotation,
-                Some((falling.target_x, falling.target_rotation)),
-                &this_others,
-                &all_air_obstacles,
-                &signals,
-            ) {
-                if falling.target_x != re_eval.target_x
-                    || falling.landing_y != re_eval.landing_y
-                    || falling.target_rotation != re_eval.rotation
-                {
-                    let replan_msg = format!(
-                        "[AI Lane {}] Replan shift: (x:{}, y:{}, rot:{}) -> (x:{}, y:{}, rot:{}) | Breakdown: {}",
-                        falling.lane_id + 1,
-                        falling.target_x,
-                        falling.landing_y,
-                        falling.target_rotation,
-                        re_eval.target_x,
-                        re_eval.landing_y,
-                        re_eval.rotation,
-                        re_eval.breakdown,
-                    );
-                    trace!("{}", replan_msg);
-                    logger.log(&replan_msg);
-                }
-
-                // 目標地点および姿勢、ウェイポイントを最新状況に更新
-                falling.target_x = re_eval.target_x;
-                falling.landing_y = re_eval.landing_y;
-                falling.target_rotation = re_eval.rotation;
-                falling.waypoints = re_eval.waypoints;
-                falling.pace = re_eval.pace;
-                falling.planned_board_version = board.board_version;
-
-                // 落下ペースに応じたインターバル再適用
-                let fall_interval = match falling.pace {
-                    LanePace::SoftDrop => base_interval * settings.soft_drop_multiplier,
-                    LanePace::Normal => base_interval,
-                };
-                falling
-                    .fall_timer
-                    .set_duration(std::time::Duration::from_secs_f32(fall_interval));
-            }
-        }
 
         // 1. 回転処理（回転衝突判定および壁キック）
         if falling.current_rotation != falling.target_rotation {
             falling.rotate_timer.tick(time.delta());
             if falling.rotate_timer.just_finished() {
-                // 次の回転状態へ1ステップ回転
                 let max_rot = falling.kind.rotation_count();
                 let next_rot = (falling.current_rotation + 1) % max_rot;
 
-                // 回転衝突判定＆キックチェック
                 if let Some((safe_x, safe_y)) = try_rotate_with_kick(
                     &board,
                     &falling.kind,
@@ -396,89 +266,15 @@ pub fn falling_tromino_system(
         if is_on_ground {
             falling.lock_timer.tick(time.delta());
             if falling.lock_timer.is_finished() {
-                let lock_x = falling.current_x.round() as i32;
-                let lock_y = falling.current_y.round() as i32;
-
-                let safe_to_lock =
-                    board.can_place(&falling.kind, falling.current_rotation, lock_x, lock_y);
-
-                if safe_to_lock {
-                    let locked = board.lock_tromino(
-                        falling.lane_id,
-                        &falling.kind,
-                        falling.current_rotation,
-                        lock_x,
-                        lock_y,
-                    );
-
-                    if locked {
-                        let lines = board.clear_full_lines();
-                        if lines > 0 {
-                            let clear_msg = format!(
-                                "[LINE CLEAR] {} lines cleared by P{}! Total Lines: {}, Score: {}",
-                                lines,
-                                falling.lane_id + 1,
-                                board.lines_cleared,
-                                board.score
-                            );
-                            info!("{}", clear_msg);
-                            logger.log(&clear_msg);
-                            logger.log_raw(&board.render_ascii());
-                        } else {
-                            let lock_msg = format!(
-                                "[LOCKED] P{} {:?} locked at (x:{}, y:{}, rot:{})",
-                                falling.lane_id + 1,
-                                falling.kind,
-                                lock_x,
-                                lock_y,
-                                falling.current_rotation
-                            );
-                            debug!("{}", lock_msg);
-                            logger.log(&lock_msg);
-                        }
-                    } else {
-                        let heights = board.column_heights();
-                        let max_h = heights.iter().max().copied().unwrap_or(0);
-                        let overflow_msg = format!(
-                            "[TOP OVERFLOW] P{} locked above ceiling! (GlobalMaxH: {}, Lines: {})",
-                            falling.lane_id + 1,
-                            max_h,
-                            board.lines_cleared
-                        );
-                        warn!("{}", overflow_msg);
-                        logger.log(&overflow_msg);
-                        logger.log_raw(&board.render_ascii());
-                    }
-                } else {
-                    let fail_msg = format!(
-                        "[LOCK FAILED] P{} {:?} cannot be placed at (x:{}, y:{}, rot:{})",
-                        falling.lane_id + 1,
-                        falling.kind,
-                        lock_x,
-                        lock_y,
-                        falling.current_rotation
-                    );
-                    warn!("{}", fail_msg);
-                    logger.log(&fail_msg);
-                }
-
-                for (lane_entity, lane) in lane_query.iter() {
-                    if lane.id == falling.lane_id {
-                        let pace_multiplier = match falling.pace {
-                            LanePace::SoftDrop => 0.65,
-                            LanePace::Normal => 1.0,
-                        };
-                        let delay = (settings.spawn_delay + (falling.lane_id as f32 * 0.04))
-                            * pace_multiplier;
-
-                        commands.entity(lane_entity).insert(LaneSpawnCooldown {
-                            timer: Timer::from_seconds(delay, TimerMode::Once),
-                        });
-                        break;
-                    }
-                }
-
-                commands.entity(tromino_entity).despawn();
+                handle_lock_process(
+                    &mut commands,
+                    tromino_entity,
+                    &falling,
+                    &mut board,
+                    &mut logger,
+                    &settings,
+                    &lane_query,
+                );
             }
         }
     }
