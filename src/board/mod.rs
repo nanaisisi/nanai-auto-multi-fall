@@ -200,7 +200,7 @@ impl GlobalBoard {
     }
 
     /// 盤面全体で最も高い位置にある穴（最上位の空白）のy座標を返す
-    #[allow(dead_code)]
+    #[allow(dead_code, clippy::needless_range_loop)]
     pub fn highest_hole_y(&self) -> Option<usize> {
         let mut max_y = None;
         for x in 0..TOTAL_GRID_WIDTH {
@@ -218,6 +218,7 @@ impl GlobalBoard {
     }
 
     /// 指定した行 y の下に塞がれている空白（穴）が存在するかどうか
+    #[allow(clippy::needless_range_loop)]
     pub fn has_hole_below_in_row(&self, y: usize) -> bool {
         if y == 0 {
             return false;
@@ -236,7 +237,7 @@ impl GlobalBoard {
     }
 
     /// 盤面全体で最も低い位置にある穴（最下層の空白）のy座標を返す
-    #[allow(dead_code)]
+    #[allow(dead_code, clippy::needless_range_loop)]
     pub fn lowest_hole_y(&self) -> Option<usize> {
         let mut min_y = None;
         for x in 0..TOTAL_GRID_WIDTH {

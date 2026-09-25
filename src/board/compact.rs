@@ -158,8 +158,8 @@ impl CompactBoard {
             let has_roof = (y..LANE_HEIGHT).any(|ry| (self.rows[ry] & bit) != 0);
             if has_roof {
                 // y より下に空白マスがあるか
-                for uy in 0..y {
-                    if (self.rows[uy] & bit) == 0 {
+                for row in self.rows.iter().take(y) {
+                    if (row & bit) == 0 {
                         return true;
                     }
                 }
