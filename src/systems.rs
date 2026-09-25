@@ -56,6 +56,7 @@ pub fn spawn_tromino_system(
     settings: Res<GameSettings>,
     mut board: ResMut<GlobalBoard>,
     signals: Res<LaneSignalBoard>,
+    mut logger: ResMut<GameLogger>,
     mut rng_query: Query<&mut WyRand, With<GlobalRng>>,
     mut lane_query: Query<(Entity, &LaneSlot, Option<&mut LaneSpawnCooldown>)>,
     falling_query: Query<&FallingTromino>,
@@ -148,7 +149,7 @@ pub fn spawn_tromino_system(
                 // スポーン成功 -> 当該レーンの積み状態は解消（回復）
                 board.lane_stuck[lane.id] = false;
 
-                debug!(
+                let spawn_msg = format!(
                     "[AI Lane {}] Spawning {:?} -> Target (x:{}, y:{}, rot:{}, pace:{:?}) | Breakdown: {}",
                     lane.id + 1,
                     kind,
@@ -158,6 +159,8 @@ pub fn spawn_tromino_system(
                     m.pace,
                     m.breakdown,
                 );
+                debug!("{}", spawn_msg);
+                logger.log(&spawn_msg);
 
                 predicted_others.push(PredictedPlacement {
                     player_id: lane.id,
@@ -203,32 +206,38 @@ pub fn spawn_tromino_system(
 
                 if !can_enter_spawn {
                     board.lane_stuck[lane.id] = true;
-                    warn!(
+                    let stuck_msg = format!(
                         "[LANE STUCK] Lane {} entrance blocked! (LaneMaxH: {}, GlobalMaxH: {}, Holes: {})",
                         lane.id + 1,
                         lane_max_h,
                         max_h,
                         holes
                     );
+                    warn!("{}", stuck_msg);
+                    logger.log(&stuck_msg);
 
                     if board.lane_stuck.iter().all(|&stuck| stuck) {
                         board.game_over = true;
-                        error!(
+                        let game_over_msg = format!(
                             "[GAME OVER] All lanes stuck! Final Lines: {}, Score: {}, Holes: {}, MaxH: {}",
                             board.lines_cleared,
                             board.score,
                             holes,
                             max_h
                         );
+                        error!("{}", game_over_msg);
+                        logger.log(&game_over_msg);
                     }
                 } else {
-                    debug!(
+                    let no_path_msg = format!(
                         "[AI Lane {}] No valid path/placement found for {:?} (LaneMaxH: {}, Holes: {})",
                         lane.id + 1,
                         kind,
                         lane_max_h,
                         holes
                     );
+                    debug!("{}", no_path_msg);
+                    logger.log(&no_path_msg);
                 }
 
                 commands.entity(lane_entity).insert(LaneSpawnCooldown {
@@ -324,6 +333,7 @@ pub fn falling_tromino_system(
     settings: Res<GameSettings>,
     mut board: ResMut<GlobalBoard>,
     signals: Res<LaneSignalBoard>,
+    mut logger: ResMut<GameLogger>,
     mut falling_query: Query<(Entity, &mut FallingTromino)>,
     lane_query: Query<(Entity, &LaneSlot)>,
 ) {
@@ -421,7 +431,7 @@ pub fn falling_tromino_system(
                     || falling.landing_y != re_eval.landing_y
                     || falling.target_rotation != re_eval.rotation
                 {
-                    trace!(
+                    let replan_msg = format!(
                         "[AI Lane {}] Replan shift: (x:{}, y:{}, rot:{}) -> (x:{}, y:{}, rot:{}) | Breakdown: {}",
                         falling.lane_id + 1,
                         falling.target_x,
@@ -432,6 +442,8 @@ pub fn falling_tromino_system(
                         re_eval.rotation,
                         re_eval.breakdown,
                     );
+                    trace!("{}", replan_msg);
+                    logger.log(&replan_msg);
                 }
 
                 // 目標地点および姿勢、ウェイポイントを最新状況に更新
@@ -653,15 +665,17 @@ pub fn falling_tromino_system(
                     if locked {
                         let lines = board.clear_full_lines();
                         if lines > 0 {
-                            info!(
+                            let clear_msg = format!(
                                 "[LINE CLEAR] {} lines cleared by P{}! Total Lines: {}, Score: {}",
                                 lines,
                                 falling.lane_id + 1,
                                 board.lines_cleared,
                                 board.score
                             );
+                            info!("{}", clear_msg);
+                            logger.log(&clear_msg);
                         } else {
-                            debug!(
+                            let lock_msg = format!(
                                 "[LOCKED] P{} {:?} locked at (x:{}, y:{}, rot:{})",
                                 falling.lane_id + 1,
                                 falling.kind,
@@ -669,19 +683,23 @@ pub fn falling_tromino_system(
                                 lock_y,
                                 falling.current_rotation
                             );
+                            debug!("{}", lock_msg);
+                            logger.log(&lock_msg);
                         }
                     } else {
                         let heights = board.column_heights();
                         let max_h = heights.iter().max().copied().unwrap_or(0);
-                        warn!(
+                        let overflow_msg = format!(
                             "[TOP OVERFLOW] P{} locked above ceiling! (GlobalMaxH: {}, Lines: {})",
                             falling.lane_id + 1,
                             max_h,
                             board.lines_cleared
                         );
+                        warn!("{}", overflow_msg);
+                        logger.log(&overflow_msg);
                     }
                 } else {
-                    warn!(
+                    let fail_msg = format!(
                         "[LOCK FAILED] P{} {:?} cannot be placed at (x:{}, y:{}, rot:{})",
                         falling.lane_id + 1,
                         falling.kind,
@@ -689,6 +707,8 @@ pub fn falling_tromino_system(
                         lock_y,
                         falling.current_rotation
                     );
+                    warn!("{}", fail_msg);
+                    logger.log(&fail_msg);
                 }
 
                 for (lane_entity, lane) in lane_query.iter() {

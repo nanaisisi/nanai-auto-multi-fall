@@ -69,6 +69,48 @@ impl Default for LaneSignalBoard {
     }
 }
 
+/// プレイログをテキストファイルに随時記録するリソース
+#[derive(Resource)]
+pub struct GameLogger {
+    pub file: Option<std::fs::File>,
+    pub start_time: std::time::Instant,
+}
+
+impl Default for GameLogger {
+    fn default() -> Self {
+        let _ = std::fs::create_dir_all("logs");
+        let timestamp = chrono_like_timestamp();
+        let path = format!("logs/game_{}.log", timestamp);
+        let file = std::fs::File::create(&path).ok();
+        let mut logger = Self {
+            file,
+            start_time: std::time::Instant::now(),
+        };
+        logger.log(&format!("=== NANAI AUTO MULTI-FALL LOG SESSION STARTED [{}] ===", timestamp));
+        logger
+    }
+}
+
+impl GameLogger {
+    pub fn log(&mut self, message: &str) {
+        if let Some(file) = &mut self.file {
+            use std::io::Write;
+            let elapsed = self.start_time.elapsed().as_secs_f32();
+            let _ = writeln!(file, "[{:>8.2}s] {}", elapsed, message);
+            let _ = file.flush();
+        }
+    }
+}
+
+fn chrono_like_timestamp() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    format!("{}", secs)
+}
+
 #[derive(Component)]
 pub struct FallingTromino {
     pub lane_id: usize,

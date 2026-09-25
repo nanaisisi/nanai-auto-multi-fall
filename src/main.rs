@@ -20,6 +20,7 @@ fn main() {
         .insert_resource(config::GameSettings::default())
         .init_resource::<board::GlobalBoard>()
         .init_resource::<game::LaneSignalBoard>()
+        .init_resource::<game::GameLogger>()
         .add_plugins(EntropyPlugin::<WyRand>::default())
         .add_plugins(
             DefaultPlugins
