@@ -177,8 +177,9 @@ pub fn spawn_tromino_system(
                     .max()
                     .unwrap_or(0);
 
+                board.lane_stuck[lane.id] = true;
+
                 if !can_enter_spawn {
-                    board.lane_stuck[lane.id] = true;
                     let stuck_msg = format!(
                         "[LANE STUCK] Lane {} entrance blocked! (LaneMaxH: {}, GlobalMaxH: {}, Holes: {})",
                         lane.id + 1,
@@ -188,29 +189,29 @@ pub fn spawn_tromino_system(
                     );
                     warn!("{}", stuck_msg);
                     logger.log(&stuck_msg);
-
-                    if board.lane_stuck.iter().all(|&stuck| stuck) {
-                        board.game_over = true;
-                        let game_over_msg = format!(
-                            "[GAME OVER] All lanes stuck! Final Lines: {}, Score: {}, Holes: {}, MaxH: {}",
-                            board.lines_cleared, board.score, holes, max_h
-                        );
-                        error!("{}", game_over_msg);
-                        logger.log(&game_over_msg);
-                        logger.log_raw(&board.render_ascii());
-                    } else {
-                        logger.log_raw(&board.render_ascii());
-                    }
                 } else {
                     let no_path_msg = format!(
-                        "[AI Lane {}] No valid path/placement found for {:?} (LaneMaxH: {}, Holes: {})",
+                        "[LANE STUCK] Lane {} no valid path/placement found for {:?} (LaneMaxH: {}, Holes: {})",
                         lane.id + 1,
                         kind,
                         lane_max_h,
                         holes
                     );
-                    debug!("{}", no_path_msg);
+                    warn!("{}", no_path_msg);
                     logger.log(&no_path_msg);
+                }
+
+                if board.lane_stuck.iter().all(|&stuck| stuck) {
+                    board.game_over = true;
+                    let game_over_msg = format!(
+                        "[GAME OVER] All lanes stuck! Final Lines: {}, Score: {}, Holes: {}, MaxH: {}",
+                        board.lines_cleared, board.score, holes, max_h
+                    );
+                    error!("{}", game_over_msg);
+                    logger.log(&game_over_msg);
+                    logger.log_raw(&board.render_ascii());
+                } else {
+                    logger.log_raw(&board.render_ascii());
                 }
 
                 commands.entity(lane_entity).insert(LaneSpawnCooldown {
