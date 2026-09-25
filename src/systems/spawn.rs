@@ -197,6 +197,9 @@ pub fn spawn_tromino_system(
                         );
                         error!("{}", game_over_msg);
                         logger.log(&game_over_msg);
+                        logger.log_raw(&board.render_ascii());
+                    } else {
+                        logger.log_raw(&board.render_ascii());
                     }
                 } else {
                     let no_path_msg = format!(

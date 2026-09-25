@@ -102,6 +102,14 @@ impl GameLogger {
             let _ = file.flush();
         }
     }
+
+    pub fn log_raw(&mut self, text: &str) {
+        if let Some(file) = &mut self.file {
+            use std::io::Write;
+            let _ = write!(file, "{}", text);
+            let _ = file.flush();
+        }
+    }
 }
 
 fn chrono_like_timestamp() -> String {

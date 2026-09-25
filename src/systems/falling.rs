@@ -423,6 +423,7 @@ pub fn falling_tromino_system(
                             );
                             info!("{}", clear_msg);
                             logger.log(&clear_msg);
+                            logger.log_raw(&board.render_ascii());
                         } else {
                             let lock_msg = format!(
                                 "[LOCKED] P{} {:?} locked at (x:{}, y:{}, rot:{})",
@@ -446,6 +447,7 @@ pub fn falling_tromino_system(
                         );
                         warn!("{}", overflow_msg);
                         logger.log(&overflow_msg);
+                        logger.log_raw(&board.render_ascii());
                     }
                 } else {
                     let fail_msg = format!(
