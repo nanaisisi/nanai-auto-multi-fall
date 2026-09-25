@@ -285,6 +285,7 @@ impl AutoAi {
         )
     }
 
+    #[allow(dead_code)]
     #[inline(always)]
     pub fn simulate_drop_with_tuck_path(
         board: &GlobalBoard,

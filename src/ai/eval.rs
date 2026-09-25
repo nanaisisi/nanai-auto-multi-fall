@@ -1,5 +1,5 @@
 use crate::ai::types::{PredictedPlacement, ScoreBreakdown};
-use crate::board::{is_border_column, lane_x_range, CompactBoard, GlobalBoard};
+use crate::board::{CompactBoard, GlobalBoard, is_border_column, lane_x_range};
 use crate::config::{LANE_HEIGHT, TOTAL_GRID_WIDTH};
 use crate::game::{HoleStatus, LaneSignalBoard};
 use crate::tromino::TrominoKind;
