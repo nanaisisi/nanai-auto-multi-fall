@@ -4,6 +4,7 @@ use bevy_rand::prelude::EntropyPlugin;
 
 mod ai;
 mod board;
+mod compact_board;
 mod config;
 mod game;
 mod render;
