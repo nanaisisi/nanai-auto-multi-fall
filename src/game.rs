@@ -77,9 +77,17 @@ pub struct GameLogger {
 
 impl Default for GameLogger {
     fn default() -> Self {
-        let _ = std::fs::create_dir_all("logs");
+        let base_dir = if std::path::Path::new("Cargo.toml").exists() {
+            std::path::PathBuf::from("logs")
+        } else if std::path::Path::new("../Cargo.toml").exists() {
+            std::path::PathBuf::from("../logs")
+        } else {
+            std::path::PathBuf::from("logs")
+        };
+
+        let _ = std::fs::create_dir_all(&base_dir);
         let timestamp = chrono_like_timestamp();
-        let path = format!("logs/game_{}.log", timestamp);
+        let path = base_dir.join(format!("game_{}.log", timestamp));
         let file = std::fs::File::create(&path).ok();
         let mut logger = Self {
             file,
