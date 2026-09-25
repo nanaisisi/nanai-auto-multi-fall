@@ -143,7 +143,33 @@ impl CompactBoard {
         max_y
     }
 
+    /// 指定した行 y の下に塞がれている空白（穴）が存在するかどうか
+    /// （＝この行を消すことで、直下にある穴の天井が削られて救出・露出に貢献するか）
+    #[inline(always)]
+    pub fn has_hole_below_in_row(&self, y: usize) -> bool {
+        if y == 0 {
+            return false;
+        }
+        // y より下の行のいずれかに 0（空白）ビットがある列を探す
+        // かつ、その空白の上にブロックが存在している（＝穴である）
+        for x in 0..TOTAL_GRID_WIDTH {
+            let bit = 1u32 << x;
+            // この列で y にブロックがあるか、もしくは y 以上のどこかに屋根があるか
+            let has_roof = (y..LANE_HEIGHT).any(|ry| (self.rows[ry] & bit) != 0);
+            if has_roof {
+                // y より下に空白マスがあるか
+                for uy in 0..y {
+                    if (self.rows[uy] & bit) == 0 {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
     /// 盤面全体で最も低い位置にある穴（最下層の空白）のy座標を返す
+    #[allow(dead_code)]
     #[inline(always)]
     pub fn lowest_hole_y(&self) -> Option<usize> {
         let mut min_y = None;

@@ -257,16 +257,14 @@ impl Evaluator {
         // yが低い（床面に近い）ほど大幅に加点し、上へのタワー積み上がりを抑制
         let bottom_priority_bonus = ((LANE_HEIGHT as i32 - y).max(0) as f32) * 8.0;
 
-        // 5. 穴・空白の「上」にあるラインの消去ボーナス
-        // 空白（穴）の上にある行が消えれば、上のブロックが落ちて穴の天井が下がり（または露出して）リカバリーできる。
-        // 最下層の穴よりも上にある行が消えれば、いずれかの穴の救出に繋がるため加点する。
+        // 5. 穴・空白の上にあるラインの消去ボーナス
+        // 塞がれている空白（穴）の上にある行が消去されれば、穴の上のブロック（蓋）が削られて
+        // 穴の露出・リカバリーに直結するため、その消去行に対して加点する。
         let mut hole_clearance_bonus = 0.0;
         if future_lines > 0 {
-            if let Some(lowest_hole) = future_board.lowest_hole_y() {
-                for &cleared_y in &future_cleared_indices {
-                    if cleared_y > lowest_hole {
-                        hole_clearance_bonus += 120.0;
-                    }
+            for &cleared_y in &future_cleared_indices {
+                if sim_future.has_hole_below_in_row(cleared_y) {
+                    hole_clearance_bonus += 120.0;
                 }
             }
         }
@@ -297,7 +295,8 @@ impl Evaluator {
         let lines_val = future_lines as f32 * line_weight + hole_clearance_bonus + row_fill_bonus;
         let coop_lines_val = cooperative_lines as f32 * cooperative_bonus_weight;
         let holes_val = holes * holes_weight;
-        let height_val = (sum_height * height_weight) + (max_height * max_height_weight) + bottom_priority_bonus;
+        let height_val =
+            (sum_height * height_weight) + (max_height * max_height_weight) + bottom_priority_bonus;
         let bumpiness_val = bumpiness * bumpiness_weight;
         let border_val = border_bridge_bonus + border_barrier_penalty;
         let well_val = well_cooperation_bonus + well_capping_penalty + well_creation_penalty;
@@ -580,11 +579,9 @@ impl Evaluator {
 
         let mut hole_clearance_bonus = 0.0;
         if future_lines > 0 {
-            if let Some(lowest_hole) = future_board.lowest_hole_y() {
-                for &cleared_y in &future_cleared_indices {
-                    if cleared_y > lowest_hole {
-                        hole_clearance_bonus += 120.0;
-                    }
+            for &cleared_y in &future_cleared_indices {
+                if sim_future.has_hole_below_in_row(cleared_y) {
+                    hole_clearance_bonus += 120.0;
                 }
             }
         }

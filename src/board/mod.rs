@@ -217,7 +217,26 @@ impl GlobalBoard {
         max_y
     }
 
+    /// 指定した行 y の下に塞がれている空白（穴）が存在するかどうか
+    pub fn has_hole_below_in_row(&self, y: usize) -> bool {
+        if y == 0 {
+            return false;
+        }
+        for x in 0..TOTAL_GRID_WIDTH {
+            let has_roof = (y..LANE_HEIGHT).any(|ry| self.cells[ry][x].is_some());
+            if has_roof {
+                for uy in 0..y {
+                    if self.cells[uy][x].is_none() {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
     /// 盤面全体で最も低い位置にある穴（最下層の空白）のy座標を返す
+    #[allow(dead_code)]
     pub fn lowest_hole_y(&self) -> Option<usize> {
         let mut min_y = None;
         for x in 0..TOTAL_GRID_WIDTH {
