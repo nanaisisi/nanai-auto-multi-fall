@@ -257,16 +257,32 @@ impl Evaluator {
         // yが低い（床面に近い）ほど大幅に加点し、上へのタワー積み上がりを抑制
         let bottom_priority_bonus = ((LANE_HEIGHT as i32 - y).max(0) as f32) * 8.0;
 
-        // 5. 穴・空白の「直上」にあるラインの消去ボーナス
-        // 最上位の空白（穴）の真上にある段を消去することでのみ、下の穴が露出してリカバリー可能になる。
-        // （空白を作らず普通に消すのが最善だが、既存の穴がある場合は最上位穴の上のライン消去に限定して加点）
+        // 5. 穴・空白の「上」にあるラインの消去ボーナス
+        // 空白（穴）の上にある行が消えれば、上のブロックが落ちて穴の天井が下がり（または露出して）リカバリーできる。
+        // 最下層の穴よりも上にある行が消えれば、いずれかの穴の救出に繋がるため加点する。
         let mut hole_clearance_bonus = 0.0;
         if future_lines > 0 {
-            if let Some(highest_hole) = future_board.highest_hole_y() {
+            if let Some(lowest_hole) = future_board.lowest_hole_y() {
                 for &cleared_y in &future_cleared_indices {
-                    if cleared_y > highest_hole {
+                    if cleared_y > lowest_hole {
                         hole_clearance_bonus += 120.0;
                     }
+                }
+            }
+        }
+
+        // 6. ライン消去へ向けた行埋め進行度ボーナス（全レーンでのライン完成を同期推進）
+        // 各行のセル埋まり数に応じて、埋まりかけの行（特に下層）を埋めるピースに加点
+        let mut row_fill_bonus = 0.0;
+        for (dy, _) in offsets.iter() {
+            let row_idx = (y + dy) as usize;
+            if row_idx < LANE_HEIGHT {
+                let count = sim_future.rows[row_idx].count_ones();
+                // 32マスのうち半分以上埋まっている段をさらに埋めると相乗ボーナス
+                if count >= 16 {
+                    let weight = (count as f32 / TOTAL_GRID_WIDTH as f32).powi(2);
+                    let row_factor = (LANE_HEIGHT - row_idx) as f32; // 下の段ほど価値が高い
+                    row_fill_bonus += weight * row_factor * 12.0;
                 }
             }
         }
@@ -275,10 +291,10 @@ impl Evaluator {
         let cooperative_bonus_weight = 350.0;
         let height_weight = -1.2;
         let max_height_weight = -2.5;
-        let holes_weight = -30.0;
+        let holes_weight = -90.0;
         let bumpiness_weight = -1.8;
 
-        let lines_val = future_lines as f32 * line_weight + hole_clearance_bonus;
+        let lines_val = future_lines as f32 * line_weight + hole_clearance_bonus + row_fill_bonus;
         let coop_lines_val = cooperative_lines as f32 * cooperative_bonus_weight;
         let holes_val = holes * holes_weight;
         let height_val = (sum_height * height_weight) + (max_height * max_height_weight) + bottom_priority_bonus;
@@ -564,9 +580,9 @@ impl Evaluator {
 
         let mut hole_clearance_bonus = 0.0;
         if future_lines > 0 {
-            if let Some(highest_hole) = future_board.highest_hole_y() {
+            if let Some(lowest_hole) = future_board.lowest_hole_y() {
                 for &cleared_y in &future_cleared_indices {
-                    if cleared_y > highest_hole {
+                    if cleared_y > lowest_hole {
                         hole_clearance_bonus += 120.0;
                     }
                 }

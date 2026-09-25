@@ -200,6 +200,7 @@ impl GlobalBoard {
     }
 
     /// 盤面全体で最も高い位置にある穴（最上位の空白）のy座標を返す
+    #[allow(dead_code)]
     pub fn highest_hole_y(&self) -> Option<usize> {
         let mut max_y = None;
         for x in 0..TOTAL_GRID_WIDTH {
@@ -214,6 +215,22 @@ impl GlobalBoard {
             }
         }
         max_y
+    }
+
+    /// 盤面全体で最も低い位置にある穴（最下層の空白）のy座標を返す
+    pub fn lowest_hole_y(&self) -> Option<usize> {
+        let mut min_y = None;
+        for x in 0..TOTAL_GRID_WIDTH {
+            let mut roof_found = false;
+            for y in (0..LANE_HEIGHT).rev() {
+                if self.cells[y][x].is_some() {
+                    roof_found = true;
+                } else if roof_found {
+                    min_y = Some(min_y.map_or(y, |prev: usize| prev.min(y)));
+                }
+            }
+        }
+        min_y
     }
 
     /// 穴の個数を計算

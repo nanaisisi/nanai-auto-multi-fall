@@ -233,7 +233,7 @@ impl AutoAi {
                     && x == cur_tx
                     && rot == cur_rot
                 {
-                    eval_score += 45.0;
+                    eval_score += 120.0;
                 }
 
                 Some(MoveEvaluation {

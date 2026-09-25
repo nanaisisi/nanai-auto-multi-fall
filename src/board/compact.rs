@@ -124,6 +124,7 @@ impl CompactBoard {
     }
 
     /// 盤面全体で最も高い位置にある穴（最上位の空白）のy座標を返す
+    #[allow(dead_code)]
     #[inline(always)]
     pub fn highest_hole_y(&self) -> Option<usize> {
         let mut max_y = None;
@@ -140,6 +141,24 @@ impl CompactBoard {
             }
         }
         max_y
+    }
+
+    /// 盤面全体で最も低い位置にある穴（最下層の空白）のy座標を返す
+    #[inline(always)]
+    pub fn lowest_hole_y(&self) -> Option<usize> {
+        let mut min_y = None;
+        for x in 0..TOTAL_GRID_WIDTH {
+            let bit = 1u32 << x;
+            let mut roof_found = false;
+            for y in (0..LANE_HEIGHT).rev() {
+                if (self.rows[y] & bit) != 0 {
+                    roof_found = true;
+                } else if roof_found {
+                    min_y = Some(min_y.map_or(y, |prev: usize| prev.min(y)));
+                }
+            }
+        }
+        min_y
     }
 
     #[inline(always)]
