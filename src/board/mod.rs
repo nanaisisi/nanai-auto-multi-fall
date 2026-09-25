@@ -133,14 +133,22 @@ impl GlobalBoard {
 
     /// 満杯になった行（幅15全セルが埋まった行）を消去し、上方の行を下へシフト
     pub fn clear_full_lines(&mut self) -> usize {
+        let (lines, _) = self.clear_full_lines_with_indices();
+        lines
+    }
+
+    /// 行消去処理（消去行数および消去された行の元のy座標リストを返す）
+    pub fn clear_full_lines_with_indices(&mut self) -> (usize, Vec<usize>) {
         let mut new_cells = [[None; TOTAL_GRID_WIDTH]; LANE_HEIGHT];
         let mut new_y = 0;
         let mut lines = 0;
+        let mut cleared_indices = Vec::new();
 
-        for row in &self.cells {
+        for (orig_y, row) in self.cells.iter().enumerate() {
             let is_full = row.iter().all(|c| c.is_some());
             if is_full {
                 lines += 1;
+                cleared_indices.push(orig_y);
             } else {
                 new_cells[new_y] = *row;
                 new_y += 1;
@@ -168,14 +176,13 @@ impl GlobalBoard {
                     self.lane_stuck[lane_id] = false;
                 }
             }
-
             // まだ全員が詰まっていない場合はゲームオーバー状態も復帰
             if !self.lane_stuck.iter().all(|&stuck| stuck) {
                 self.game_over = false;
             }
         }
 
-        lines
+        (lines, cleared_indices)
     }
 
     /// 各列の高さを取得 (0..LANE_HEIGHT)
@@ -190,6 +197,23 @@ impl GlobalBoard {
             }
         }
         heights
+    }
+
+    /// 盤面全体で最も高い位置にある穴（最上位の空白）のy座標を返す
+    pub fn highest_hole_y(&self) -> Option<usize> {
+        let mut max_y = None;
+        for x in 0..TOTAL_GRID_WIDTH {
+            let mut roof_found = false;
+            for y in (0..LANE_HEIGHT).rev() {
+                if self.cells[y][x].is_some() {
+                    roof_found = true;
+                } else if roof_found {
+                    max_y = Some(max_y.map_or(y, |prev: usize| prev.max(y)));
+                    break;
+                }
+            }
+        }
+        max_y
     }
 
     /// 穴の個数を計算

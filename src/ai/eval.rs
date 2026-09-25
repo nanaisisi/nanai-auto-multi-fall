@@ -22,7 +22,7 @@ impl Evaluator {
     ) -> (f32, ScoreBreakdown) {
         let mut sim_future = *future_board;
         sim_future.lock_tromino(kind, rot, x, y);
-        let future_lines = sim_future.clear_full_lines();
+        let (future_lines, future_cleared_indices) = sim_future.clear_full_lines_with_indices();
 
         let mut sim_alone = *current_board;
         sim_alone.lock_tromino(kind, rot, x, y);
@@ -113,9 +113,9 @@ impl Evaluator {
                             .any(|above_y| (future_board.rows[above_y] & bit) != 0);
 
                         if !already_blocked_before {
-                            anti_roof_penalty -= 80.0;
+                            anti_roof_penalty -= 220.0;
                         } else {
-                            anti_roof_penalty -= 5.0;
+                            anti_roof_penalty -= 15.0;
                         }
                     }
                 }
@@ -241,17 +241,35 @@ impl Evaluator {
                 for (dx, _) in &offsets {
                     let cx = x + dx;
                     if (cx as usize) < TOTAL_GRID_WIDTH && is_border_column(cx as usize) {
-                        non_interference_penalty -= 10.0;
+                        non_interference_penalty -= 30.0;
                     }
                 }
             }
         }
 
-        // 3. レーン中心からの距離ペナルティ
+        // 3. レーン中心からの距離ペナルティ（譲り合い：自分の持ち場を優先し、むやみに遠くの他レーンへ侵入しない）
         let (lane_min_x, lane_max_x) = lane_x_range(player_id);
         let lane_center_x = (lane_min_x + lane_max_x) as f32 / 2.0;
         let dist_from_lane = (x as f32 - lane_center_x).abs();
-        let dist_penalty = dist_from_lane * -3.5;
+        let dist_penalty = dist_from_lane * -6.0;
+
+        // 4. 底のライン・低層配置優先（接地高さペナルティ / 底優先）
+        // yが低い（床面に近い）ほど大幅に加点し、上へのタワー積み上がりを抑制
+        let bottom_priority_bonus = ((LANE_HEIGHT as i32 - y).max(0) as f32) * 8.0;
+
+        // 5. 穴・空白の「直上」にあるラインの消去ボーナス
+        // 最上位の空白（穴）の真上にある段を消去することでのみ、下の穴が露出してリカバリー可能になる。
+        // （空白を作らず普通に消すのが最善だが、既存の穴がある場合は最上位穴の上のライン消去に限定して加点）
+        let mut hole_clearance_bonus = 0.0;
+        if future_lines > 0 {
+            if let Some(highest_hole) = future_board.highest_hole_y() {
+                for &cleared_y in &future_cleared_indices {
+                    if cleared_y > highest_hole {
+                        hole_clearance_bonus += 120.0;
+                    }
+                }
+            }
+        }
 
         let line_weight = 250.0;
         let cooperative_bonus_weight = 350.0;
@@ -260,10 +278,10 @@ impl Evaluator {
         let holes_weight = -30.0;
         let bumpiness_weight = -1.8;
 
-        let lines_val = future_lines as f32 * line_weight;
+        let lines_val = future_lines as f32 * line_weight + hole_clearance_bonus;
         let coop_lines_val = cooperative_lines as f32 * cooperative_bonus_weight;
         let holes_val = holes * holes_weight;
-        let height_val = (sum_height * height_weight) + (max_height * max_height_weight);
+        let height_val = (sum_height * height_weight) + (max_height * max_height_weight) + bottom_priority_bonus;
         let bumpiness_val = bumpiness * bumpiness_weight;
         let border_val = border_bridge_bonus + border_barrier_penalty;
         let well_val = well_cooperation_bonus + well_capping_penalty + well_creation_penalty;
@@ -316,7 +334,7 @@ impl Evaluator {
     ) -> f32 {
         let mut sim_future = future_board.clone();
         sim_future.lock_tromino(player_id, kind, rot, x, y);
-        let future_lines = sim_future.clear_full_lines();
+        let (future_lines, future_cleared_indices) = sim_future.clear_full_lines_with_indices();
 
         let mut sim_alone = current_board.clone();
         sim_alone.lock_tromino(player_id, kind, rot, x, y);
@@ -404,9 +422,9 @@ impl Evaluator {
                             .any(|above_y| future_board.cells[above_y][cx as usize].is_some());
 
                         if !already_blocked_before {
-                            anti_roof_penalty -= 80.0;
+                            anti_roof_penalty -= 220.0;
                         } else {
-                            anti_roof_penalty -= 5.0;
+                            anti_roof_penalty -= 15.0;
                         }
                     }
                 }
@@ -531,7 +549,7 @@ impl Evaluator {
                 for (dx, _) in &offsets {
                     let cx = x + dx;
                     if (cx as usize) < TOTAL_GRID_WIDTH && is_border_column(cx as usize) {
-                        non_interference_penalty -= 10.0;
+                        non_interference_penalty -= 30.0;
                     }
                 }
             }
@@ -540,7 +558,20 @@ impl Evaluator {
         let (lane_min_x, lane_max_x) = lane_x_range(player_id);
         let lane_center_x = (lane_min_x + lane_max_x) as f32 / 2.0;
         let dist_from_lane = (x as f32 - lane_center_x).abs();
-        let dist_penalty = dist_from_lane * -3.5;
+        let dist_penalty = dist_from_lane * -6.0;
+
+        let bottom_priority_bonus = ((LANE_HEIGHT as i32 - y).max(0) as f32) * 8.0;
+
+        let mut hole_clearance_bonus = 0.0;
+        if future_lines > 0 {
+            if let Some(highest_hole) = future_board.highest_hole_y() {
+                for &cleared_y in &future_cleared_indices {
+                    if cleared_y > highest_hole {
+                        hole_clearance_bonus += 120.0;
+                    }
+                }
+            }
+        }
 
         let line_weight = 250.0;
         let cooperative_bonus_weight = 350.0;
@@ -549,7 +580,9 @@ impl Evaluator {
         let holes_weight = -30.0;
         let bumpiness_weight = -1.8;
 
-        (future_lines as f32 * line_weight)
+        let lines_val = future_lines as f32 * line_weight + hole_clearance_bonus;
+
+        lines_val
             + (cooperative_lines as f32 * cooperative_bonus_weight)
             + border_bridge_bonus
             + border_barrier_penalty
@@ -564,6 +597,7 @@ impl Evaluator {
             + dist_penalty
             + (sum_height * height_weight)
             + (max_height * max_height_weight)
+            + bottom_priority_bonus
             + (holes * holes_weight)
             + (bumpiness * bumpiness_weight)
     }

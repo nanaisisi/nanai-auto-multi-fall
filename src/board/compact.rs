@@ -64,21 +64,30 @@ impl CompactBoard {
     /// 行消去シミュレーション（フルラインをビットマスク判定し、シフト）
     #[inline(always)]
     pub fn clear_full_lines(&mut self) -> usize {
+        let (lines, _) = self.clear_full_lines_with_indices();
+        lines
+    }
+
+    /// 行消去シミュレーション（消去行数および消去された行の元のy座標リストを返す）
+    #[inline(always)]
+    pub fn clear_full_lines_with_indices(&mut self) -> (usize, Vec<usize>) {
         let mut new_rows = [0u32; LANE_HEIGHT];
         let mut new_y = 0;
         let mut lines = 0;
+        let mut cleared_indices = Vec::new();
 
-        for row in self.rows {
-            if (row & Self::FULL_ROW_MASK) == Self::FULL_ROW_MASK {
+        for (orig_y, row) in self.rows.iter().enumerate() {
+            if (*row & Self::FULL_ROW_MASK) == Self::FULL_ROW_MASK {
                 lines += 1;
+                cleared_indices.push(orig_y);
             } else {
-                new_rows[new_y] = row;
+                new_rows[new_y] = *row;
                 new_y += 1;
             }
         }
 
         self.rows = new_rows;
-        lines
+        (lines, cleared_indices)
     }
 
     #[inline(always)]
@@ -112,6 +121,25 @@ impl CompactBoard {
             }
         }
         holes
+    }
+
+    /// 盤面全体で最も高い位置にある穴（最上位の空白）のy座標を返す
+    #[inline(always)]
+    pub fn highest_hole_y(&self) -> Option<usize> {
+        let mut max_y = None;
+        for x in 0..TOTAL_GRID_WIDTH {
+            let bit = 1u32 << x;
+            let mut roof_found = false;
+            for y in (0..LANE_HEIGHT).rev() {
+                if (self.rows[y] & bit) != 0 {
+                    roof_found = true;
+                } else if roof_found {
+                    max_y = Some(max_y.map_or(y, |prev: usize| prev.max(y)));
+                    break;
+                }
+            }
+        }
+        max_y
     }
 
     #[inline(always)]
