@@ -180,7 +180,7 @@ impl AutoAi {
         best_move
     }
 
-    /// 落下中の空中現在位置から再計算を行うメソッド
+    /// 落下中の空中現在位置から再計算を行うメソッド（現在の予定に対するコミットメント維持ボーナス対応）
     pub fn find_best_move_from_position(
         board: &GlobalBoard,
         lane_id: usize,
@@ -188,6 +188,7 @@ impl AutoAi {
         current_x: i32,
         current_y: i32,
         current_rotation: usize,
+        current_target: Option<(i32, usize)>, // (target_x, target_rot)
         predicted_others: &[PredictedPlacement],
         _air_obstacles: &[(i32, i32)],
         signals: &LaneSignalBoard,
@@ -270,7 +271,7 @@ impl AutoAi {
                     return None;
                 }
 
-                let (eval_score, breakdown) = Self::evaluate_placement_compact(
+                let (mut eval_score, breakdown) = Self::evaluate_placement_compact(
                     &compact_current,
                     &compact_future,
                     lane_id,
@@ -281,6 +282,14 @@ impl AutoAi {
                     predicted_others,
                     signals,
                 );
+
+                // 計画維持ボーナス（ヒステリシス）：既に決定済みの目標地点・姿勢を維持する場合にボーナスを付与
+                // 微小な点数差（他者の微妙な高さ変化など）による目標のブレや玉突き振動を防止する
+                if let Some((cur_tx, cur_rot)) = current_target {
+                    if x == cur_tx && rot == cur_rot {
+                        eval_score += 45.0; // 計画維持の慣性（大幅な改善または塞がれた場合のみ変更）
+                    }
+                }
 
                 Some(MoveEvaluation {
                     rotation: rot,

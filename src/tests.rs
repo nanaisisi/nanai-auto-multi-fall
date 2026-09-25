@@ -354,6 +354,7 @@ mod tests {
             0,
             10,
             1,
+            Some((0, 1)),
             &[],
             &[],
             &signals,

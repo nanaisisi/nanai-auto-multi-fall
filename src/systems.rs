@@ -193,7 +193,7 @@ pub fn spawn_tromino_system(
                     pace: lane_pace,
                     waypoints: m.waypoints,
                     planned_board_version: board.board_version,
-                    replan_timer: Timer::from_seconds(0.18, TimerMode::Repeating),
+                    replan_timer: Timer::from_seconds(0.60, TimerMode::Repeating),
                 });
             }
             None => {
@@ -423,6 +423,7 @@ pub fn falling_tromino_system(
                 current_int_x,
                 current_int_y,
                 falling.current_rotation,
+                Some((falling.target_x, falling.target_rotation)),
                 &this_others,
                 &all_air_obstacles,
                 &signals,
