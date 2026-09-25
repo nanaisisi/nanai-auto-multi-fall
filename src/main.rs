@@ -32,7 +32,7 @@ fn main() {
                     ..default()
                 })
                 .set(bevy::log::LogPlugin {
-                    filter: format!("{},icu_provider=error", bevy::log::DEFAULT_FILTER),
+                    filter: format!("{},icu_provider=error,nanai_auto_multi_fall=debug", bevy::log::DEFAULT_FILTER),
                     ..default()
                 }),
         )

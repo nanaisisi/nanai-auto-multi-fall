@@ -148,6 +148,17 @@ pub fn spawn_tromino_system(
                 // スポーン成功 -> 当該レーンの積み状態は解消（回復）
                 board.lane_stuck[lane.id] = false;
 
+                debug!(
+                    "[AI Lane {}] Spawning {:?} -> Target (x:{}, y:{}, rot:{}, pace:{:?}) | Breakdown: {}",
+                    lane.id + 1,
+                    kind,
+                    m.target_x,
+                    m.landing_y,
+                    m.rotation,
+                    m.pace,
+                    m.breakdown,
+                );
+
                 predicted_others.push(PredictedPlacement {
                     player_id: lane.id,
                     kind,
@@ -181,16 +192,43 @@ pub fn spawn_tromino_system(
                     planned_board_version: board.board_version,
                     replan_timer: Timer::from_seconds(0.18, TimerMode::Repeating),
                 });
-
-
             }
             None => {
                 // 次の形が出せない（一時的な積み）状態
+                let heights = board.column_heights();
+                let max_h = heights.iter().max().copied().unwrap_or(0);
+                let holes = board.count_holes();
+                let (lane_min_x, lane_max_x) = lane_x_range(lane.id);
+                let lane_max_h = (lane_min_x..=lane_max_x).map(|x| heights[x]).max().unwrap_or(0);
+
                 if !can_enter_spawn {
                     board.lane_stuck[lane.id] = true;
+                    warn!(
+                        "[LANE STUCK] Lane {} entrance blocked! (LaneMaxH: {}, GlobalMaxH: {}, Holes: {})",
+                        lane.id + 1,
+                        lane_max_h,
+                        max_h,
+                        holes
+                    );
+
                     if board.lane_stuck.iter().all(|&stuck| stuck) {
                         board.game_over = true;
+                        error!(
+                            "[GAME OVER] All lanes stuck! Final Lines: {}, Score: {}, Holes: {}, MaxH: {}",
+                            board.lines_cleared,
+                            board.score,
+                            holes,
+                            max_h
+                        );
                     }
+                } else {
+                    debug!(
+                        "[AI Lane {}] No valid path/placement found for {:?} (LaneMaxH: {}, Holes: {})",
+                        lane.id + 1,
+                        kind,
+                        lane_max_h,
+                        holes
+                    );
                 }
 
                 commands.entity(lane_entity).insert(LaneSpawnCooldown {
@@ -379,6 +417,23 @@ pub fn falling_tromino_system(
                 &all_air_obstacles,
                 &signals,
             ) {
+                if falling.target_x != re_eval.target_x
+                    || falling.landing_y != re_eval.landing_y
+                    || falling.target_rotation != re_eval.rotation
+                {
+                    trace!(
+                        "[AI Lane {}] Replan shift: (x:{}, y:{}, rot:{}) -> (x:{}, y:{}, rot:{}) | Breakdown: {}",
+                        falling.lane_id + 1,
+                        falling.target_x,
+                        falling.landing_y,
+                        falling.target_rotation,
+                        re_eval.target_x,
+                        re_eval.landing_y,
+                        re_eval.rotation,
+                        re_eval.breakdown,
+                    );
+                }
+
                 // 目標地点および姿勢、ウェイポイントを最新状況に更新
                 falling.target_x = re_eval.target_x;
                 falling.landing_y = re_eval.landing_y;
@@ -596,8 +651,44 @@ pub fn falling_tromino_system(
                     );
 
                     if locked {
-                        board.clear_full_lines();
+                        let lines = board.clear_full_lines();
+                        if lines > 0 {
+                            info!(
+                                "[LINE CLEAR] {} lines cleared by P{}! Total Lines: {}, Score: {}",
+                                lines,
+                                falling.lane_id + 1,
+                                board.lines_cleared,
+                                board.score
+                            );
+                        } else {
+                            debug!(
+                                "[LOCKED] P{} {:?} locked at (x:{}, y:{}, rot:{})",
+                                falling.lane_id + 1,
+                                falling.kind,
+                                lock_x,
+                                lock_y,
+                                falling.current_rotation
+                            );
+                        }
+                    } else {
+                        let heights = board.column_heights();
+                        let max_h = heights.iter().max().copied().unwrap_or(0);
+                        warn!(
+                            "[TOP OVERFLOW] P{} locked above ceiling! (GlobalMaxH: {}, Lines: {})",
+                            falling.lane_id + 1,
+                            max_h,
+                            board.lines_cleared
+                        );
                     }
+                } else {
+                    warn!(
+                        "[LOCK FAILED] P{} {:?} cannot be placed at (x:{}, y:{}, rot:{})",
+                        falling.lane_id + 1,
+                        falling.kind,
+                        lock_x,
+                        lock_y,
+                        falling.current_rotation
+                    );
                 }
 
                 for (lane_entity, lane) in lane_query.iter() {

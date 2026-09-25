@@ -6,12 +6,48 @@ use crate::tromino::TrominoKind;
 use std::collections::{HashMap, HashSet, VecDeque};
 
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ScoreBreakdown {
+    pub total: f32,
+    pub lines: f32,
+    pub coop_lines: f32,
+    pub holes_penalty: f32,
+    pub height_penalty: f32,
+    pub bumpiness_penalty: f32,
+    pub anti_roof: f32,
+    pub hole_fill: f32,
+    pub border: f32,
+    pub signal_coop: f32,
+    pub well_coop: f32,
+}
+
+impl std::fmt::Display for ScoreBreakdown {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "total:{:+.1} (line:{:+.0}, coop:{:+.0}, holes:{:+.1}, h:{:+.1}, bump:{:+.1}, roof:{:+.0}, fill:{:+.0}, border:{:+.0}, well:{:+.0}, sig:{:+.0})",
+            self.total,
+            self.lines,
+            self.coop_lines,
+            self.holes_penalty,
+            self.height_penalty,
+            self.bumpiness_penalty,
+            self.anti_roof,
+            self.hole_fill,
+            self.border,
+            self.well_coop,
+            self.signal_coop,
+        )
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct MoveEvaluation {
     pub rotation: usize,
     pub target_x: i32,
     pub landing_y: i32,
     pub score: f32,
+    pub breakdown: ScoreBreakdown,
     pub pace: LanePace,
     pub waypoints: Vec<(i32, i32)>,
 }
@@ -117,7 +153,7 @@ impl AutoAi {
                     return None;
                 }
 
-                let eval_score = Self::evaluate_placement_compact(
+                let (eval_score, breakdown) = Self::evaluate_placement_compact(
                     &compact_current,
                     &compact_future,
                     lane_id,
@@ -134,6 +170,7 @@ impl AutoAi {
                     target_x: x,
                     landing_y,
                     score: eval_score,
+                    breakdown,
                     pace: autonomous_pace,
                     waypoints,
                 })
@@ -233,7 +270,7 @@ impl AutoAi {
                     return None;
                 }
 
-                let eval_score = Self::evaluate_placement_compact(
+                let (eval_score, breakdown) = Self::evaluate_placement_compact(
                     &compact_current,
                     &compact_future,
                     lane_id,
@@ -250,6 +287,7 @@ impl AutoAi {
                     target_x: x,
                     landing_y,
                     score: eval_score,
+                    breakdown,
                     pace: autonomous_pace,
                     waypoints,
                 })
@@ -663,7 +701,7 @@ impl AutoAi {
         y: i32,
         predicted_others: &[PredictedPlacement],
         signals: &LaneSignalBoard,
-    ) -> f32 {
+    ) -> (f32, ScoreBreakdown) {
         let mut sim_future = *future_board;
         sim_future.lock_tromino(kind, rot, x, y);
         let future_lines = sim_future.clear_full_lines();
@@ -901,23 +939,44 @@ impl AutoAi {
         let holes_weight = -30.0;
         let bumpiness_weight = -1.8;
 
-        (future_lines as f32 * line_weight)
-            + (cooperative_lines as f32 * cooperative_bonus_weight)
-            + border_bridge_bonus
-            + border_barrier_penalty
+        let lines_val = future_lines as f32 * line_weight;
+        let coop_lines_val = cooperative_lines as f32 * cooperative_bonus_weight;
+        let holes_val = holes * holes_weight;
+        let height_val = (sum_height * height_weight) + (max_height * max_height_weight);
+        let bumpiness_val = bumpiness * bumpiness_weight;
+        let border_val = border_bridge_bonus + border_barrier_penalty;
+        let well_val = well_cooperation_bonus + well_capping_penalty + well_creation_penalty;
+        let sig_val = signal_cooperation_bonus + non_interference_penalty + adjacency_bonus + dist_penalty;
+
+        let total = lines_val
+            + coop_lines_val
+            + border_val
             + adjacency_bonus
             + anti_roof_penalty
             + hole_fill_bonus
             + signal_cooperation_bonus
-            + well_cooperation_bonus
-            + well_capping_penalty
-            + well_creation_penalty
+            + well_val
             + non_interference_penalty
             + dist_penalty
-            + (sum_height * height_weight)
-            + (max_height * max_height_weight)
-            + (holes * holes_weight)
-            + (bumpiness * bumpiness_weight)
+            + height_val
+            + holes_val
+            + bumpiness_val;
+
+        let breakdown = ScoreBreakdown {
+            total,
+            lines: lines_val,
+            coop_lines: coop_lines_val,
+            holes_penalty: holes_val,
+            height_penalty: height_val,
+            bumpiness_penalty: bumpiness_val,
+            anti_roof: anti_roof_penalty,
+            hole_fill: hole_fill_bonus,
+            border: border_val,
+            signal_coop: sig_val,
+            well_coop: well_val,
+        };
+
+        (total, breakdown)
     }
 
     /// 評価関数（空白フタ防止・人間的な曖昧シグナル支援・隣レーン不干渉を含む）
