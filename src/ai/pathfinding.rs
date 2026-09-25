@@ -29,6 +29,7 @@ impl PathFinder {
     }
 
     /// 空中の現在地点 (start_x, start_y) から目標列 target_x への到達可能性とウェイポイントをBFS探索
+    #[allow(clippy::too_many_arguments)]
     pub fn simulate_drop_from_path(
         board: &GlobalBoard,
         kind: &TrominoKind,

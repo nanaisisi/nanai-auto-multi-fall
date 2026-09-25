@@ -61,8 +61,8 @@ pub struct LaneSignalBoard {
 impl Default for LaneSignalBoard {
     fn default() -> Self {
         let mut signals = [LaneSignal::default(); LANE_COUNT];
-        for i in 0..LANE_COUNT {
-            signals[i].lane_id = i;
+        for (i, signal) in signals.iter_mut().enumerate() {
+            signal.lane_id = i;
         }
         Self { signals }
     }

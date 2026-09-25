@@ -68,11 +68,11 @@ impl CompactBoard {
         let mut new_y = 0;
         let mut lines = 0;
 
-        for y in 0..LANE_HEIGHT {
-            if (self.rows[y] & Self::FULL_ROW_MASK) == Self::FULL_ROW_MASK {
+        for row in self.rows {
+            if (row & Self::FULL_ROW_MASK) == Self::FULL_ROW_MASK {
                 lines += 1;
             } else {
-                new_rows[new_y] = self.rows[y];
+                new_rows[new_y] = row;
                 new_y += 1;
             }
         }
@@ -82,6 +82,7 @@ impl CompactBoard {
     }
 
     #[inline(always)]
+    #[allow(clippy::needless_range_loop)]
     pub fn column_heights(&self) -> [usize; TOTAL_GRID_WIDTH] {
         let mut heights = [0; TOTAL_GRID_WIDTH];
         for x in 0..TOTAL_GRID_WIDTH {

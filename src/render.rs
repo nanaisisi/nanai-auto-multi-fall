@@ -3,13 +3,16 @@ use crate::config::*;
 use crate::game::*;
 use bevy::prelude::*;
 
+type DynamicVisualQuery<'w, 's> =
+    Query<'w, 's, Entity, Or<(With<FallingCellVisual>, With<GhostCellVisual>)>>;
+
 /// 固定済みセル、落下中セル、ゴースト（着地予測）を描画・更新するシステム
 pub fn render_system(
     mut commands: Commands,
     board: Res<GlobalBoard>,
     mut cell_visual_query: Query<(&BoardCellVisual, &mut Sprite)>,
     falling_query: Query<&FallingTromino>,
-    dynamic_visual_query: Query<Entity, Or<(With<FallingCellVisual>, With<GhostCellVisual>)>>,
+    dynamic_visual_query: DynamicVisualQuery,
 ) {
     // 1. 固定グリッドセルの色をボード状態に同期（各プレイヤー固有色）
     for (cell_vis, mut sprite) in cell_visual_query.iter_mut() {

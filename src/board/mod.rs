@@ -52,10 +52,10 @@ impl GlobalBoard {
     /// ビットマスク表現の軽量盤面（Copy可能・ゼロアロケーション）を生成
     pub fn to_compact(&self) -> CompactBoard {
         let mut rows = [0u32; LANE_HEIGHT];
-        for y in 0..LANE_HEIGHT {
+        for (y, row_cells) in self.cells.iter().enumerate() {
             let mut row = 0u32;
-            for x in 0..TOTAL_GRID_WIDTH {
-                if self.cells[y][x].is_some() {
+            for (x, cell) in row_cells.iter().enumerate() {
+                if cell.is_some() {
                     row |= 1u32 << x;
                 }
             }
@@ -137,12 +137,12 @@ impl GlobalBoard {
         let mut new_y = 0;
         let mut lines = 0;
 
-        for y in 0..LANE_HEIGHT {
-            let is_full = self.cells[y].iter().all(|c| c.is_some());
+        for row in &self.cells {
+            let is_full = row.iter().all(|c| c.is_some());
             if is_full {
                 lines += 1;
             } else {
-                new_cells[new_y] = self.cells[y];
+                new_cells[new_y] = *row;
                 new_y += 1;
             }
         }
@@ -193,6 +193,7 @@ impl GlobalBoard {
     }
 
     /// 穴の個数を計算
+    #[allow(clippy::needless_range_loop)]
     pub fn count_holes(&self) -> usize {
         let mut holes = 0;
         for x in 0..TOTAL_GRID_WIDTH {
@@ -209,6 +210,7 @@ impl GlobalBoard {
     }
 
     /// 指定レーン範囲内の穴（最深の空白）の座標 (x, y) および頭上にブロックが被さっているかを返す
+    #[allow(clippy::needless_range_loop)]
     pub fn find_lane_deepest_hole(&self, lane_id: usize) -> Option<(usize, usize, bool)> {
         let (min_x, max_x) = lane_x_range(lane_id);
 
@@ -358,6 +360,7 @@ impl GlobalBoard {
     }
 
     /// 対象ターゲット行（最もブロックが揃っている下層段）における自レーンのブロック充足率 (0.0〜1.0) を算出
+    #[allow(clippy::needless_range_loop)]
     pub fn lane_fill_ratio_at_target_line(&self, lane_id: usize) -> f32 {
         let (min_x, max_x) = lane_x_range(lane_id);
         let lane_w = max_x - min_x + 1;
@@ -387,4 +390,5 @@ impl GlobalBoard {
     }
 }
 
-pub use crate::compact_board::CompactBoard;
+pub mod compact;
+pub use compact::CompactBoard;

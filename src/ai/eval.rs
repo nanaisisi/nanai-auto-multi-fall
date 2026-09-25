@@ -8,6 +8,7 @@ pub struct Evaluator;
 
 impl Evaluator {
     /// ビットマスク版CompactBoardを用いたゼロアロケーション・高速評価関数
+    #[allow(clippy::too_many_arguments)]
     pub fn evaluate_placement_compact(
         current_board: &CompactBoard,
         future_board: &CompactBoard,
@@ -301,7 +302,7 @@ impl Evaluator {
     }
 
     /// 評価関数（空白フタ防止・人間的な曖昧シグナル支援・隣レーン不干渉を含む）
-    #[allow(dead_code)]
+    #[allow(dead_code, clippy::too_many_arguments)]
     pub fn evaluate_placement(
         current_board: &GlobalBoard,
         future_board: &GlobalBoard,
