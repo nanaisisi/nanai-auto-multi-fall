@@ -48,7 +48,6 @@ pub fn update_lane_signals_system(
     }
 }
 
-
 /// 新規トミノのスポーンシステム（限定シグナル＆ペース連動対応）
 pub fn spawn_tromino_system(
     mut commands: Commands,
@@ -96,7 +95,8 @@ pub fn spawn_tromino_system(
         .collect();
 
     falling_etas.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-    let mut predicted_others: Vec<PredictedPlacement> = falling_etas.into_iter().map(|(_, p)| p).collect();
+    let mut predicted_others: Vec<PredictedPlacement> =
+        falling_etas.into_iter().map(|(_, p)| p).collect();
 
     let mut air_obstacles: Vec<(i32, i32)> = Vec::new();
     for falling in falling_query.iter() {
@@ -136,10 +136,18 @@ pub fn spawn_tromino_system(
         };
 
         // 投入口直下にブロックが詰まっているかチェック
-        let can_enter_spawn = board.can_place(&kind, initial_rotation, start_x as i32, start_y as i32);
+        let can_enter_spawn =
+            board.can_place(&kind, initial_rotation, start_x as i32, start_y as i32);
 
         let best_move = if can_enter_spawn {
-            AutoAi::find_best_move(&board, lane.id, &kind, &predicted_others, &air_obstacles, &signals)
+            AutoAi::find_best_move(
+                &board,
+                lane.id,
+                &kind,
+                &predicted_others,
+                &air_obstacles,
+                &signals,
+            )
         } else {
             None
         };
@@ -202,7 +210,10 @@ pub fn spawn_tromino_system(
                 let max_h = heights.iter().max().copied().unwrap_or(0);
                 let holes = board.count_holes();
                 let (lane_min_x, lane_max_x) = lane_x_range(lane.id);
-                let lane_max_h = (lane_min_x..=lane_max_x).map(|x| heights[x]).max().unwrap_or(0);
+                let lane_max_h = (lane_min_x..=lane_max_x)
+                    .map(|x| heights[x])
+                    .max()
+                    .unwrap_or(0);
 
                 if !can_enter_spawn {
                     board.lane_stuck[lane.id] = true;
@@ -220,10 +231,7 @@ pub fn spawn_tromino_system(
                         board.game_over = true;
                         let game_over_msg = format!(
                             "[GAME OVER] All lanes stuck! Final Lines: {}, Score: {}, Holes: {}, MaxH: {}",
-                            board.lines_cleared,
-                            board.score,
-                            holes,
-                            max_h
+                            board.lines_cleared, board.score, holes, max_h
                         );
                         error!("{}", game_over_msg);
                         logger.log(&game_over_msg);
@@ -247,7 +255,6 @@ pub fn spawn_tromino_system(
         }
     }
 }
-
 
 /// 指定した (x, y, rotation) においてトミノが盤面（壁・固定ブロック）および他トミノと衝突するか判定
 fn check_position_collision(
@@ -386,7 +393,8 @@ pub fn falling_tromino_system(
         })
         .collect();
     other_etas.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-    let all_predicted_others: Vec<PredictedPlacement> = other_etas.into_iter().map(|(_, p)| p).collect();
+    let all_predicted_others: Vec<PredictedPlacement> =
+        other_etas.into_iter().map(|(_, p)| p).collect();
 
     for (tromino_entity, mut falling) in falling_query.iter_mut() {
         let current_int_y = falling.current_y.round() as i32;
@@ -460,7 +468,9 @@ pub fn falling_tromino_system(
                     LanePace::SoftDrop => base_interval * settings.soft_drop_multiplier,
                     LanePace::Normal => base_interval,
                 };
-                falling.fall_timer.set_duration(std::time::Duration::from_secs_f32(fall_interval));
+                falling
+                    .fall_timer
+                    .set_duration(std::time::Duration::from_secs_f32(fall_interval));
             }
         }
 
@@ -498,7 +508,8 @@ pub fn falling_tromino_system(
         let max_dx = offsets.iter().map(|(dx, _)| *dx).max().unwrap_or(0);
 
         // トミノの全パーツが完全に仕切り壁より下にあるか判定
-        let fully_below_spawn_wall = (falling.current_y.round() as i32 + max_dy) < SPAWN_WALL_MIN_Y as i32;
+        let fully_below_spawn_wall =
+            (falling.current_y.round() as i32 + max_dy) < SPAWN_WALL_MIN_Y as i32;
 
         // 2. ウェイポイントの更新と横移動処理
         // ウェイポイントがある場合、現在の高度・位置に合わせて到達判定と次の目標決定を行う
@@ -506,7 +517,8 @@ pub fn falling_tromino_system(
             let (wp_x, wp_y) = falling.waypoints[0];
             // ウェイポイントの X に到達しており、かつ高度も通過または到達していれば消費
             if (falling.current_x - wp_x as f32).abs() <= 0.05
-                && (current_int_y <= wp_y || (falling.waypoints.len() > 1 && falling.waypoints[1].1 < wp_y))
+                && (current_int_y <= wp_y
+                    || (falling.waypoints.len() > 1 && falling.waypoints[1].1 < wp_y))
             {
                 falling.waypoints.remove(0);
             } else if current_int_y < wp_y && (falling.current_x - wp_x as f32).abs() > 0.05 {
@@ -527,16 +539,19 @@ pub fn falling_tromino_system(
                 let test_next_int_x = (falling.current_x + test_dir).round() as i32;
                 let test_block_min_x = test_next_int_x + min_dx;
                 let test_block_max_x = test_next_int_x + max_dx;
-                let test_inside = test_block_min_x >= lane_min_x as i32 && test_block_max_x <= lane_max_x as i32;
-                if (test_inside || fully_below_spawn_wall) && check_position_collision(
-                    &board,
-                    &falling.kind,
-                    falling.current_rotation,
-                    test_next_int_x,
-                    current_int_y,
-                    tromino_entity,
-                    &current_falling,
-                ) {
+                let test_inside =
+                    test_block_min_x >= lane_min_x as i32 && test_block_max_x <= lane_max_x as i32;
+                if (test_inside || fully_below_spawn_wall)
+                    && check_position_collision(
+                        &board,
+                        &falling.kind,
+                        falling.current_rotation,
+                        test_next_int_x,
+                        current_int_y,
+                        tromino_entity,
+                        &current_falling,
+                    )
+                {
                     // 頭上や側面に障害物があるため、wp_y まで下降するまでは横移動を保留
                     current_int_x
                 } else {
@@ -568,7 +583,8 @@ pub fn falling_tromino_system(
 
             let block_min_x = check_int_x + min_dx;
             let block_max_x = check_int_x + max_dx;
-            let is_inside_slot = block_min_x >= lane_min_x as i32 && block_max_x <= lane_max_x as i32;
+            let is_inside_slot =
+                block_min_x >= lane_min_x as i32 && block_max_x <= lane_max_x as i32;
 
             if is_inside_slot || fully_below_spawn_wall {
                 let collides = check_position_collision(
@@ -719,7 +735,8 @@ pub fn falling_tromino_system(
                             LanePace::SoftDrop => 0.65,
                             LanePace::Normal => 1.0,
                         };
-                        let delay = (settings.spawn_delay + (falling.lane_id as f32 * 0.04)) * pace_multiplier;
+                        let delay = (settings.spawn_delay + (falling.lane_id as f32 * 0.04))
+                            * pace_multiplier;
 
                         commands.entity(lane_entity).insert(LaneSpawnCooldown {
                             timer: Timer::from_seconds(delay, TimerMode::Once),
@@ -731,6 +748,5 @@ pub fn falling_tromino_system(
                 commands.entity(tromino_entity).despawn();
             }
         }
-
     }
 }

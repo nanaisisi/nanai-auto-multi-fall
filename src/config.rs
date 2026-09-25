@@ -57,7 +57,7 @@ pub struct GameSettings {
     pub initial_fall_interval: f32, // 初期基準落下間隔（秒）
     pub min_fall_interval: f32,     // 消去加速の上限速度（最短落下間隔）
     pub spawn_delay: f32,
-    pub soft_drop_multiplier: f32,  // 下キー入力（ソフトドロップ）時の落下間隔倍率
+    pub soft_drop_multiplier: f32, // 下キー入力（ソフトドロップ）時の落下間隔倍率
 }
 
 impl Default for GameSettings {
@@ -66,7 +66,7 @@ impl Default for GameSettings {
             initial_fall_interval: 0.35, // 初期はゆったり（約2.8マス/秒）見やすく快適なペース
             min_fall_interval: 0.04,     // 最高速・困難時（25マス/秒）
             spawn_delay: 0.12,
-            soft_drop_multiplier: 0.35,  // 下キー入力時は高速落下
+            soft_drop_multiplier: 0.35, // 下キー入力時は高速落下
         }
     }
 }
@@ -80,5 +80,3 @@ impl GameSettings {
         (self.initial_fall_interval - speedup).max(self.min_fall_interval)
     }
 }
-
-

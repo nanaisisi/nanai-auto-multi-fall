@@ -1,7 +1,7 @@
-use bevy::prelude::*;
-use crate::board::{is_border_column, GlobalBoard};
+use crate::board::{GlobalBoard, is_border_column};
 use crate::config::*;
 use crate::game::*;
+use bevy::prelude::*;
 
 /// 固定済みセル、落下中セル、ゴースト（着地予測）を描画・更新するシステム
 pub fn render_system(

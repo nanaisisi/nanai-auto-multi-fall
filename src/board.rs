@@ -1,6 +1,4 @@
-use crate::config::{
-    player_color, LANE_HEIGHT, LANE_WIDTH, SPAWN_WALL_MIN_Y, TOTAL_GRID_WIDTH,
-};
+use crate::config::{LANE_HEIGHT, LANE_WIDTH, SPAWN_WALL_MIN_Y, TOTAL_GRID_WIDTH, player_color};
 use crate::tromino::TrominoKind;
 use bevy::prelude::*;
 
@@ -164,9 +162,8 @@ impl GlobalBoard {
             for lane_id in 0..crate::config::LANE_COUNT {
                 let (min_x, max_x) = lane_x_range(lane_id);
                 // 投入口の上部（SPAWN_WALL_MIN_Y以上）にブロックが残っていなければ積み解除
-                let still_blocked = (SPAWN_WALL_MIN_Y..LANE_HEIGHT).any(|y| {
-                    (min_x..=max_x).any(|x| self.cells[y][x].is_some())
-                });
+                let still_blocked = (SPAWN_WALL_MIN_Y..LANE_HEIGHT)
+                    .any(|y| (min_x..=max_x).any(|x| self.cells[y][x].is_some()));
                 if !still_blocked {
                     self.lane_stuck[lane_id] = false;
                 }
@@ -236,7 +233,8 @@ impl GlobalBoard {
         // もし屋根が被さっている穴がなければ、最下層付近で未配置のマス（隣の列より凹んでいる谷）をチェック
         if deepest_hole.is_none() {
             let heights = self.column_heights();
-            let avg_height: f32 = (min_x..=max_x).map(|x| heights[x] as f32).sum::<f32>() / (max_x - min_x + 1) as f32;
+            let avg_height: f32 = (min_x..=max_x).map(|x| heights[x] as f32).sum::<f32>()
+                / (max_x - min_x + 1) as f32;
             for x in min_x..=max_x {
                 if (heights[x] as f32) < avg_height - 1.0 {
                     // 明らかに凹んでいる（今すぐ埋められる）場所
@@ -264,11 +262,7 @@ impl GlobalBoard {
 
             // 左右の壁/ブロックの高さを判定
             // xが0またはTOTAL_GRID_WIDTH-1なら盤面の外壁として扱う
-            let left_h = if x == 0 {
-                LANE_HEIGHT
-            } else {
-                heights[x - 1]
-            };
+            let left_h = if x == 0 { LANE_HEIGHT } else { heights[x - 1] };
             let right_h = if x + 1 >= TOTAL_GRID_WIDTH {
                 LANE_HEIGHT
             } else {
@@ -301,11 +295,7 @@ impl GlobalBoard {
                 continue;
             }
 
-            let left_h = if x == 0 {
-                LANE_HEIGHT
-            } else {
-                heights[x - 1]
-            };
+            let left_h = if x == 0 { LANE_HEIGHT } else { heights[x - 1] };
             let right_h = if x + 1 >= TOTAL_GRID_WIDTH {
                 LANE_HEIGHT
             } else {
@@ -376,7 +366,9 @@ impl GlobalBoard {
         let mut best_target_y = 0;
         let mut max_overall_filled = 0;
         for y in 0..5.min(LANE_HEIGHT) {
-            let filled_count = (0..TOTAL_GRID_WIDTH).filter(|&x| self.cells[y][x].is_some()).count();
+            let filled_count = (0..TOTAL_GRID_WIDTH)
+                .filter(|&x| self.cells[y][x].is_some())
+                .count();
             if filled_count > max_overall_filled {
                 max_overall_filled = filled_count;
                 best_target_y = y;
@@ -392,9 +384,7 @@ impl GlobalBoard {
             .count();
 
         my_lane_filled as f32 / lane_w as f32
-
     }
 }
 
 pub use crate::compact_board::CompactBoard;
-

@@ -34,7 +34,10 @@ fn main() {
                     ..default()
                 })
                 .set(bevy::log::LogPlugin {
-                    filter: format!("{},icu_provider=error,nanai_auto_multi_fall=debug", bevy::log::DEFAULT_FILTER),
+                    filter: format!(
+                        "{},icu_provider=error,nanai_auto_multi_fall=debug",
+                        bevy::log::DEFAULT_FILTER
+                    ),
                     ..default()
                 }),
         )
@@ -45,15 +48,9 @@ fn main() {
                 systems::update_lane_signals_system,
                 systems::spawn_tromino_system,
                 systems::falling_tromino_system,
-            ).chain(),
+            )
+                .chain(),
         )
-        .add_systems(
-            PostUpdate,
-            (
-                render::render_system,
-                ui::update_ui_system,
-            ),
-        )
-
+        .add_systems(PostUpdate, (render::render_system, ui::update_ui_system))
         .run();
 }

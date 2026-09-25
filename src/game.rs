@@ -1,6 +1,6 @@
-use bevy::prelude::*;
 use crate::config::*;
 use crate::tromino::TrominoKind;
+use bevy::prelude::*;
 
 #[derive(Component)]
 pub struct LaneSlot {
@@ -24,7 +24,6 @@ pub enum LanePace {
     /// 自然落下: システム側の加速度そのままのスピードで落下
     Normal,
 }
-
 
 #[derive(Debug, Clone, Copy)]
 pub struct LaneSignal {
@@ -86,7 +85,10 @@ impl Default for GameLogger {
             file,
             start_time: std::time::Instant::now(),
         };
-        logger.log(&format!("=== NANAI AUTO MULTI-FALL LOG SESSION STARTED [{}] ===", timestamp));
+        logger.log(&format!(
+            "=== NANAI AUTO MULTI-FALL LOG SESSION STARTED [{}] ===",
+            timestamp
+        ));
         logger
     }
 }
@@ -133,7 +135,6 @@ pub struct FallingTromino {
     /// 状況変化や予期せぬ事態に応じた定期的再計算タイマー
     pub replan_timer: Timer,
 }
-
 
 #[derive(Component)]
 pub struct LaneSpawnCooldown {

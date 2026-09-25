@@ -1,10 +1,9 @@
-use crate::board::{is_border_column, lane_x_range, CompactBoard, GlobalBoard};
+use crate::board::{CompactBoard, GlobalBoard, is_border_column, lane_x_range};
 use crate::config::{LANE_HEIGHT, TOTAL_GRID_WIDTH};
 use crate::game::{HoleStatus, LanePace, LaneSignalBoard};
 use crate::tromino::TrominoKind;
 
 use std::collections::{HashMap, HashSet, VecDeque};
-
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ScoreBreakdown {
@@ -51,7 +50,6 @@ pub struct MoveEvaluation {
     pub pace: LanePace,
     pub waypoints: Vec<(i32, i32)>,
 }
-
 
 /// 他プレイヤーの着地予測情報
 #[derive(Debug, Clone, Copy)]
@@ -126,7 +124,8 @@ impl AutoAi {
         }
 
         // 全回転・X座標配置候補のシミュレーション・評価
-        let best_move = candidates
+
+        candidates
             .into_iter()
             .filter_map(|(rot, x)| {
                 let offsets = kind.cell_offsets(rot);
@@ -175,9 +174,11 @@ impl AutoAi {
                     waypoints,
                 })
             })
-            .max_by(|a, b| a.score.partial_cmp(&b.score).unwrap_or(std::cmp::Ordering::Equal));
-
-        best_move
+            .max_by(|a, b| {
+                a.score
+                    .partial_cmp(&b.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
     }
 
     /// 落下中の空中現在位置から再計算を行うメソッド（現在の予定に対するコミットメント維持ボーナス対応）
@@ -235,7 +236,9 @@ impl AutoAi {
             let max_dx = offsets.iter().map(|(dx, _)| *dx).max().unwrap();
 
             let search_min_x = (lane_min_x as i32 - 3).max(-min_dx).min(current_x - 3);
-            let search_max_x = (lane_max_x as i32 + 3).min((TOTAL_GRID_WIDTH as i32 - 1) - max_dx).max(current_x + 3);
+            let search_max_x = (lane_max_x as i32 + 3)
+                .min((TOTAL_GRID_WIDTH as i32 - 1) - max_dx)
+                .max(current_x + 3);
 
             for x in search_min_x..=search_max_x {
                 candidates.push((rot, x));
@@ -243,7 +246,8 @@ impl AutoAi {
         }
 
         // 空中再計算の探索
-        let best_move = candidates
+
+        candidates
             .into_iter()
             .filter_map(|(rot, x)| {
                 let offsets = kind.cell_offsets(rot);
@@ -285,10 +289,11 @@ impl AutoAi {
 
                 // 計画維持ボーナス（ヒステリシス）：既に決定済みの目標地点・姿勢を維持する場合にボーナスを付与
                 // 微小な点数差（他者の微妙な高さ変化など）による目標のブレや玉突き振動を防止する
-                if let Some((cur_tx, cur_rot)) = current_target {
-                    if x == cur_tx && rot == cur_rot {
-                        eval_score += 45.0; // 計画維持の慣性（大幅な改善または塞がれた場合のみ変更）
-                    }
+                if let Some((cur_tx, cur_rot)) = current_target
+                    && x == cur_tx
+                    && rot == cur_rot
+                {
+                    eval_score += 45.0; // 計画維持の慣性（大幅な改善または塞がれた場合のみ変更）
                 }
 
                 Some(MoveEvaluation {
@@ -301,9 +306,11 @@ impl AutoAi {
                     waypoints,
                 })
             })
-            .max_by(|a, b| a.score.partial_cmp(&b.score).unwrap_or(std::cmp::Ordering::Equal));
-
-        best_move
+            .max_by(|a, b| {
+                a.score
+                    .partial_cmp(&b.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
     }
 
     /// 空中の現在地点 (start_x, start_y) から目標列 target_x への到達可能性とウェイポイントをBFS探索
@@ -324,9 +331,27 @@ impl AutoAi {
 
         // 垂直落下による直接着地判定
         let mut direct_landing_y = None;
-        if start_x == target_x && Self::can_place_check(board, kind, to_rot, target_x, start_y, reserved_landing_cells) {
+        if start_x == target_x
+            && Self::can_place_check(
+                board,
+                kind,
+                to_rot,
+                target_x,
+                start_y,
+                reserved_landing_cells,
+            )
+        {
             let mut y = start_y;
-            while y > 0 && Self::can_place_check(board, kind, to_rot, target_x, y - 1, reserved_landing_cells) {
+            while y > 0
+                && Self::can_place_check(
+                    board,
+                    kind,
+                    to_rot,
+                    target_x,
+                    y - 1,
+                    reserved_landing_cells,
+                )
+            {
                 y -= 1;
             }
             if Self::can_place_check(board, kind, to_rot, target_x, y, reserved_landing_cells) {
@@ -338,13 +363,24 @@ impl AutoAi {
         let mut visited = HashSet::new();
         let mut parent_map: HashMap<(i32, i32), (i32, i32)> = HashMap::new();
 
-        if !Self::can_place_check(board, kind, to_rot, start_x, start_y, reserved_landing_cells) {
+        if !Self::can_place_check(
+            board,
+            kind,
+            to_rot,
+            start_x,
+            start_y,
+            reserved_landing_cells,
+        ) {
             // 回転直後が衝突する場合はキック位置を起点にする
             let mut kick_found = false;
             for (kdx, kdy) in [(0, 0), (-1, 0), (1, 0), (0, 1), (-1, 1), (1, 1), (0, -1)] {
                 let tx = start_x + kdx;
                 let ty = start_y + kdy;
-                if tx >= -min_dx && tx + max_dx < TOTAL_GRID_WIDTH as i32 && ty >= 0 && Self::can_place_check(board, kind, to_rot, tx, ty, reserved_landing_cells) {
+                if tx >= -min_dx
+                    && tx + max_dx < TOTAL_GRID_WIDTH as i32
+                    && ty >= 0
+                    && Self::can_place_check(board, kind, to_rot, tx, ty, reserved_landing_cells)
+                {
                     queue.push_back((tx, ty));
                     visited.insert((tx, ty));
                     kick_found = true;
@@ -362,7 +398,8 @@ impl AutoAi {
         let mut lowest_target_y: Option<i32> = None;
 
         while let Some((cx, cy)) = queue.pop_front() {
-            let can_move_down = cy > 0 && Self::can_place_check(board, kind, to_rot, cx, cy - 1, reserved_landing_cells);
+            let can_move_down = cy > 0
+                && Self::can_place_check(board, kind, to_rot, cx, cy - 1, reserved_landing_cells);
 
             if !can_move_down && cx == target_x {
                 match lowest_target_y {
@@ -419,10 +456,7 @@ impl AutoAi {
                 }
             }
         } else {
-            let mut prev_dir = (
-                raw_path[1].0 - raw_path[0].0,
-                raw_path[1].1 - raw_path[0].1,
-            );
+            let mut prev_dir = (raw_path[1].0 - raw_path[0].0, raw_path[1].1 - raw_path[0].1);
             for i in 2..raw_path.len() {
                 let cur_dir = (
                     raw_path[i].0 - raw_path[i - 1].0,
@@ -485,12 +519,20 @@ impl AutoAi {
             TrominoKind::Straight => 1,
             TrominoKind::Corner => 0,
         };
-        if !Self::can_place_check(board, kind, initial_rotation, spawn_x, start_y, air_obstacles) {
+        if !Self::can_place_check(
+            board,
+            kind,
+            initial_rotation,
+            spawn_x,
+            start_y,
+            air_obstacles,
+        ) {
             return None;
         }
 
         // 垂直落下による直接着地Yの高速取得（存在する場合）
-        let direct_y_opt = Self::simulate_direct_drop(board, lane_id, kind, rot, target_x, reserved_landing_cells);
+        let direct_y_opt =
+            Self::simulate_direct_drop(board, lane_id, kind, rot, target_x, reserved_landing_cells);
 
         // 垂直落下で届かない場合（オーバーハング下・屋根下・接地横スライドなど）、BFSで経路探索
         let offsets = kind.cell_offsets(rot);
@@ -520,7 +562,8 @@ impl AutoAi {
         let mut lowest_target_y: Option<i32> = None;
 
         while let Some((cx, cy)) = queue.pop_front() {
-            let can_move_down = cy > 0 && Self::can_place_check(board, kind, rot, cx, cy - 1, reserved_landing_cells);
+            let can_move_down = cy > 0
+                && Self::can_place_check(board, kind, rot, cx, cy - 1, reserved_landing_cells);
 
             if !can_move_down && cx == target_x {
                 match lowest_target_y {
@@ -545,7 +588,8 @@ impl AutoAi {
                 let nx = cx + dx;
                 let block_min_x = nx + min_dx;
                 let block_max_x = nx + max_dx;
-                let is_inside_slot = block_min_x >= lane_min_x as i32 && block_max_x <= lane_max_x as i32;
+                let is_inside_slot =
+                    block_min_x >= lane_min_x as i32 && block_max_x <= lane_max_x as i32;
 
                 if (is_inside_slot || fully_below_spawn_wall)
                     && nx >= -min_dx
@@ -567,7 +611,8 @@ impl AutoAi {
             (None, Some(dir_y)) => {
                 let block_min_x = target_x + min_dx;
                 let block_max_x = target_x + max_dx;
-                let is_inside_slot = block_min_x >= lane_min_x as i32 && block_max_x <= lane_max_x as i32;
+                let is_inside_slot =
+                    block_min_x >= lane_min_x as i32 && block_max_x <= lane_max_x as i32;
 
                 let wps = if is_inside_slot {
                     vec![(target_x, dir_y)]
@@ -599,10 +644,7 @@ impl AutoAi {
                 }
             }
         } else {
-            let mut prev_dir = (
-                raw_path[1].0 - raw_path[0].0,
-                raw_path[1].1 - raw_path[0].1,
-            );
+            let mut prev_dir = (raw_path[1].0 - raw_path[0].0, raw_path[1].1 - raw_path[0].1);
             for i in 2..raw_path.len() {
                 let cur_dir = (
                     raw_path[i].0 - raw_path[i - 1].0,
@@ -643,8 +685,7 @@ impl AutoAi {
 
         let block_min_x = target_x + min_dx;
         let block_max_x = target_x + max_dx;
-        let is_inside_slot =
-            block_min_x >= lane_min_x as i32 && block_max_x <= lane_max_x as i32;
+        let is_inside_slot = block_min_x >= lane_min_x as i32 && block_max_x <= lane_max_x as i32;
 
         let max_dy = offsets.iter().map(|(_, dy)| *dy).max().unwrap();
 
@@ -661,13 +702,22 @@ impl AutoAi {
         let min_step_x = spawn_x.min(target_x);
         let max_step_x = spawn_x.max(target_x);
         for path_x in min_step_x..=max_step_x {
-            if !Self::can_place_check(board, kind, rot, path_x, sim_start_y, reserved_landing_cells) {
+            if !Self::can_place_check(
+                board,
+                kind,
+                rot,
+                path_x,
+                sim_start_y,
+                reserved_landing_cells,
+            ) {
                 return None;
             }
         }
 
         let mut y = sim_start_y;
-        while y > 0 && Self::can_place_check(board, kind, rot, target_x, y - 1, reserved_landing_cells) {
+        while y > 0
+            && Self::can_place_check(board, kind, rot, target_x, y - 1, reserved_landing_cells)
+        {
             y -= 1;
         }
 
@@ -823,9 +873,10 @@ impl AutoAi {
         }
         for other_signal in &signals.signals {
             if other_signal.lane_id != player_id
-                && let Some((wx, wy, wdepth)) = other_signal.vertical_well {
-                    active_vertical_wells.push((other_signal.lane_id, wx, wy, wdepth));
-                }
+                && let Some((wx, wy, wdepth)) = other_signal.vertical_well
+            {
+                active_vertical_wells.push((other_signal.lane_id, wx, wy, wdepth));
+            }
         }
 
         let mut well_cooperation_bonus = 0.0;
@@ -857,7 +908,9 @@ impl AutoAi {
                 TrominoKind::Corner => {
                     let covers_well_col = offsets.iter().any(|(dx, _)| (x + dx) == wx as i32);
                     if covers_well_col {
-                        let lands_above_bottom = offsets.iter().any(|(dx, dy)| (x + dx) == wx as i32 && (y + dy) > wy as i32);
+                        let lands_above_bottom = offsets
+                            .iter()
+                            .any(|(dx, dy)| (x + dx) == wx as i32 && (y + dy) > wy as i32);
                         if lands_above_bottom {
                             well_capping_penalty -= 280.0;
                         }
@@ -955,7 +1008,8 @@ impl AutoAi {
         let bumpiness_val = bumpiness * bumpiness_weight;
         let border_val = border_bridge_bonus + border_barrier_penalty;
         let well_val = well_cooperation_bonus + well_capping_penalty + well_creation_penalty;
-        let sig_val = signal_cooperation_bonus + non_interference_penalty + adjacency_bonus + dist_penalty;
+        let sig_val =
+            signal_cooperation_bonus + non_interference_penalty + adjacency_bonus + dist_penalty;
 
         let total = lines_val
             + coop_lines_val
@@ -1099,7 +1153,8 @@ impl AutoAi {
                         // もしその下の空洞が、幅1マスの縦穴奥かつ高さ2以下で
                         // トミノではどうしようもない（進入不可能な）横空間である場合、
                         // 縦穴解消を優先するためペナルティを大幅に緩和（ほぼ無視）
-                        let is_unreachable = future_board.is_unreachable_alcove(cx as usize, under_y as usize);
+                        let is_unreachable =
+                            future_board.is_unreachable_alcove(cx as usize, under_y as usize);
                         if is_unreachable {
                             anti_roof_penalty -= 5.0;
                             continue;
@@ -1136,9 +1191,10 @@ impl AutoAi {
         // 他レーンのシグナルから縦穴情報を取得
         for other_signal in &signals.signals {
             if other_signal.lane_id != player_id
-                && let Some((wx, wy, wdepth)) = other_signal.vertical_well {
-                    active_vertical_wells.push((other_signal.lane_id, wx, wy, wdepth));
-                }
+                && let Some((wx, wy, wdepth)) = other_signal.vertical_well
+            {
+                active_vertical_wells.push((other_signal.lane_id, wx, wy, wdepth));
+            }
         }
 
         // --- 縦穴に対する L字フタ回避 & I字縦穴埋め協力 ---
@@ -1177,7 +1233,9 @@ impl AutoAi {
                     let covers_well_col = offsets.iter().any(|(dx, _)| (x + dx) == wx as i32);
                     if covers_well_col {
                         // 縦穴の底より上で蓋をしてしまうか、あるいは縦穴の開口部付近を塞ぐ場合
-                        let lands_above_bottom = offsets.iter().any(|(dx, dy)| (x + dx) == wx as i32 && (y + dy) > wy as i32);
+                        let lands_above_bottom = offsets
+                            .iter()
+                            .any(|(dx, dy)| (x + dx) == wx as i32 && (y + dy) > wy as i32);
                         if lands_above_bottom {
                             // 縦穴（深さ2以上）の上を塞ぐ悪手に対して重いペナルティ
                             well_capping_penalty -= 280.0;
@@ -1269,9 +1327,7 @@ impl AutoAi {
                     }
                 }
             }
-
         }
-
 
         // -------------------------------------------------------------
         // 3. レーン中心からの距離ペナルティ（基本は自レーン担当）
@@ -1307,4 +1363,3 @@ impl AutoAi {
             + (bumpiness * bumpiness_weight)
     }
 }
-

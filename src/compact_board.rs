@@ -41,7 +41,13 @@ impl CompactBoard {
     }
 
     #[inline(always)]
-    pub fn lock_tromino(&mut self, kind: &TrominoKind, rotation: usize, base_x: i32, base_y: i32) -> bool {
+    pub fn lock_tromino(
+        &mut self,
+        kind: &TrominoKind,
+        rotation: usize,
+        base_x: i32,
+        base_y: i32,
+    ) -> bool {
         let mut top_overflow = false;
         for (dx, dy) in kind.cell_offsets(rotation) {
             let cx = base_x + dx;
@@ -119,7 +125,11 @@ impl CompactBoard {
             }
 
             let left_h = if x == 0 { LANE_HEIGHT } else { heights[x - 1] };
-            let right_h = if x + 1 >= TOTAL_GRID_WIDTH { LANE_HEIGHT } else { heights[x + 1] };
+            let right_h = if x + 1 >= TOTAL_GRID_WIDTH {
+                LANE_HEIGHT
+            } else {
+                heights[x + 1]
+            };
 
             let wall_h = left_h.min(right_h);
             if wall_h >= h + 2 {
@@ -157,7 +167,11 @@ impl CompactBoard {
             }
 
             let left_h = if x == 0 { LANE_HEIGHT } else { heights[x - 1] };
-            let right_h = if x + 1 >= TOTAL_GRID_WIDTH { LANE_HEIGHT } else { heights[x + 1] };
+            let right_h = if x + 1 >= TOTAL_GRID_WIDTH {
+                LANE_HEIGHT
+            } else {
+                heights[x + 1]
+            };
 
             let wall_h = left_h.min(right_h);
             if wall_h >= h + 2 {

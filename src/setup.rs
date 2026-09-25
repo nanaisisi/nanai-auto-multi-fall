@@ -1,7 +1,7 @@
-use bevy::prelude::*;
 use crate::board::is_border_column;
 use crate::config::*;
 use crate::game::*;
+use bevy::prelude::*;
 
 pub fn setup_game(mut commands: Commands) {
     // 2Dカメラ
@@ -62,9 +62,7 @@ pub fn setup_game(mut commands: Commands) {
     // 4つの投入口スロットエンティティを生成
     for lane_id in 0..LANE_COUNT {
         commands.spawn((
-            LaneSlot {
-                id: lane_id,
-            },
+            LaneSlot { id: lane_id },
             LaneSpawnCooldown {
                 timer: Timer::from_seconds(0.1 + lane_id as f32 * 0.12, TimerMode::Once),
             },

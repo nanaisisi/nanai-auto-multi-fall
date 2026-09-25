@@ -1,9 +1,9 @@
 #[cfg(test)]
 mod tests {
-    use crate::board::{is_border_column, GlobalBoard};
-    use crate::config::{player_color, SPAWN_WALL_MIN_Y, TOTAL_GRID_WIDTH};
-    use crate::tromino::TrominoKind;
     use crate::ai::{AutoAi, PredictedPlacement};
+    use crate::board::{GlobalBoard, is_border_column};
+    use crate::config::{SPAWN_WALL_MIN_Y, TOTAL_GRID_WIDTH, player_color};
+    use crate::tromino::TrominoKind;
 
     #[test]
     fn test_border_column_and_wall() {
@@ -74,16 +74,19 @@ mod tests {
 
         let kind = TrominoKind::Straight;
         let signals = crate::game::LaneSignalBoard::default();
-        let best_move = AutoAi::find_best_move(&board, 0, &kind, &[], &[], &signals).expect("Move found");
+        let best_move =
+            AutoAi::find_best_move(&board, 0, &kind, &[], &[], &signals).expect("Move found");
 
         let offsets = kind.cell_offsets(best_move.rotation);
         let uses_border = offsets
             .iter()
             .any(|(dx, _)| is_border_column((best_move.target_x + dx) as usize));
 
-        assert!(uses_border, "AI should utilize border columns when appropriate");
+        assert!(
+            uses_border,
+            "AI should utilize border columns when appropriate"
+        );
     }
-
 
     #[test]
     fn test_movement_destination_collision_prevention() {
@@ -150,7 +153,8 @@ mod tests {
         // 自レーンAIによるペース自己決定のテスト: 空白・遅れがあるため SoftDrop（下キー入力）を自己決定するはず
         let kind = TrominoKind::Straight;
         let signals = crate::game::LaneSignalBoard::default();
-        let best_move = AutoAi::find_best_move(&board, 0, &kind, &[], &[], &signals).expect("Move found");
+        let best_move =
+            AutoAi::find_best_move(&board, 0, &kind, &[], &[], &signals).expect("Move found");
         assert_eq!(best_move.pace, crate::game::LanePace::SoftDrop);
     }
 
@@ -163,11 +167,17 @@ mod tests {
         let speed_after_100_lines = settings.current_base_fall_interval(100);
 
         assert_eq!(initial_speed, 0.35, "Initial fall interval should be 0.35s");
-        assert!(speed_after_20_lines < initial_speed, "Speed should accelerate as lines are cleared");
+        assert!(
+            speed_after_20_lines < initial_speed,
+            "Speed should accelerate as lines are cleared"
+        );
         assert!(speed_after_50_lines < speed_after_20_lines);
         assert!(speed_after_100_lines <= speed_after_50_lines);
         // 100消し程度で最高難度（min_fall_interval 0.04s）に到達
-        assert_eq!(speed_after_100_lines, settings.min_fall_interval, "Should reach maximum difficulty around 100 lines cleared");
+        assert_eq!(
+            speed_after_100_lines, settings.min_fall_interval,
+            "Should reach maximum difficulty around 100 lines cleared"
+        );
 
         // SoftDrop 時はさらに倍率がかかり高速
         let soft_drop_interval = speed_after_20_lines * settings.soft_drop_multiplier;
@@ -201,11 +211,18 @@ mod tests {
         // あるいは x=1 の列から下まで降りて、最後に左 (x=0) へ接地スライドして入る。
         board.cells[1][0] = Some(player_color(0));
 
-        let path = AutoAi::simulate_drop_with_tuck_path(&board, 0, &TrominoKind::Corner, 3, 0, &[], &[]);
-        assert!(path.is_some(), "Should find path into alcove for corner tromino");
+        let path =
+            AutoAi::simulate_drop_with_tuck_path(&board, 0, &TrominoKind::Corner, 3, 0, &[], &[]);
+        assert!(
+            path.is_some(),
+            "Should find path into alcove for corner tromino"
+        );
         let (landing_y, waypoints) = path.unwrap();
         assert_eq!(landing_y, 0, "Should land at y=0 inside alcove");
-        assert!(!waypoints.is_empty(), "Should generate waypoints to guide lateral slide");
+        assert!(
+            !waypoints.is_empty(),
+            "Should generate waypoints to guide lateral slide"
+        );
     }
 
     #[test]
@@ -220,11 +237,18 @@ mod tests {
 
         // 隣のレーン (x=3) などから進入可能
         // Straight (横向き: rot=0, (0,0), (1,0), (2,0)) を y=0, x=0 の奥に埋める
-        let path = AutoAi::simulate_drop_with_tuck_path(&board, 0, &TrominoKind::Straight, 0, 0, &[], &[]);
-        assert!(path.is_some(), "Should find aerial tuck-in path for Straight tromino under overhang");
+        let path =
+            AutoAi::simulate_drop_with_tuck_path(&board, 0, &TrominoKind::Straight, 0, 0, &[], &[]);
+        assert!(
+            path.is_some(),
+            "Should find aerial tuck-in path for Straight tromino under overhang"
+        );
         let (landing_y, waypoints) = path.unwrap();
         assert_eq!(landing_y, 0, "Should reach bottom y=0 under the roof");
-        assert!(waypoints.len() >= 2, "Should have descent then lateral move waypoints");
+        assert!(
+            waypoints.len() >= 2,
+            "Should have descent then lateral move waypoints"
+        );
     }
 
     #[test]
@@ -248,10 +272,13 @@ mod tests {
 
         let offsets = TrominoKind::Corner.cell_offsets(best_move.rotation);
         // x=1 にフタ（y > 0 で x=1 を塞いで y=0 を空洞のまま残す）をしていないことを検証
-        let caps_well = offsets.iter().any(|(dx, dy)| {
-            (best_move.target_x + dx) == 1 && (best_move.landing_y + dy) > 0
-        });
-        assert!(!caps_well, "L-tromino must not cap the vertical well at x=1 leaving a hole below");
+        let caps_well = offsets
+            .iter()
+            .any(|(dx, dy)| (best_move.target_x + dx) == 1 && (best_move.landing_y + dy) > 0);
+        assert!(
+            !caps_well,
+            "L-tromino must not cap the vertical well at x=1 leaving a hole below"
+        );
     }
 
     #[test]
@@ -270,12 +297,23 @@ mod tests {
         // レーン0 (x=0,1,2) に I字（Straight）が出現
         // レーン0のプレイヤーは隣接するレーン1の縦穴 (x=5) に縦向き (rot=1) で駆けつけ、
         // 縦穴をピッタリ埋める協調手を選択する
-        let best_move = AutoAi::find_best_move(&board, 0, &TrominoKind::Straight, &[], &[], &signals)
-            .expect("Move found for Straight");
+        let best_move =
+            AutoAi::find_best_move(&board, 0, &TrominoKind::Straight, &[], &[], &signals)
+                .expect("Move found for Straight");
 
-        assert_eq!(best_move.rotation % 2, 1, "Should choose vertical orientation (Straight rot=1)");
-        assert_eq!(best_move.target_x, 5, "Should place at neighbor lane's vertical well at x=5");
-        assert_eq!(best_move.landing_y, 0, "Should sink to bottom y=0 to fill the well");
+        assert_eq!(
+            best_move.rotation % 2,
+            1,
+            "Should choose vertical orientation (Straight rot=1)"
+        );
+        assert_eq!(
+            best_move.target_x, 5,
+            "Should place at neighbor lane's vertical well at x=5"
+        );
+        assert_eq!(
+            best_move.landing_y, 0,
+            "Should sink to bottom y=0 to fill the well"
+        );
     }
 
     #[test]
@@ -286,12 +324,16 @@ mod tests {
         board.cells[0][3] = Some(player_color(0));
 
         let signals = crate::game::LaneSignalBoard::default();
-        let best_move = AutoAi::find_best_move(&board, 0, &TrominoKind::Straight, &[], &[], &signals)
-            .expect("Move found for Straight");
+        let best_move =
+            AutoAi::find_best_move(&board, 0, &TrominoKind::Straight, &[], &[], &signals)
+                .expect("Move found for Straight");
 
         // 境界列 x=3 に縦向き (rot=1) で置いて壁を伸ばす悪手を選択していないか検証
         let is_vertical_on_border = (best_move.rotation % 2 == 1) && best_move.target_x == 3;
-        assert!(!is_vertical_on_border, "AI must avoid placing vertical I-tromino on border column to form a barrier");
+        assert!(
+            !is_vertical_on_border,
+            "AI must avoid placing vertical I-tromino on border column to form a barrier"
+        );
     }
 
     #[test]
@@ -302,12 +344,17 @@ mod tests {
         let board = GlobalBoard::default();
         let signals = crate::game::LaneSignalBoard::default();
 
-        let best_move = AutoAi::find_best_move(&board, 0, &TrominoKind::Straight, &[], &[], &signals)
-            .expect("Move found for Straight");
+        let best_move =
+            AutoAi::find_best_move(&board, 0, &TrominoKind::Straight, &[], &[], &signals)
+                .expect("Move found for Straight");
 
         // 完全に平坦な盤面では、縦向き (rot=1) で自ら深さ3の溝を作るのではなく、
         // 横向き (rot=0) で平坦に接地させるはず
-        assert_eq!(best_move.rotation % 2, 0, "AI should prefer horizontal I-tromino on flat board to prevent creating deep vertical wells");
+        assert_eq!(
+            best_move.rotation % 2,
+            0,
+            "AI should prefer horizontal I-tromino on flat board to prevent creating deep vertical wells"
+        );
     }
 
     #[test]
@@ -324,16 +371,23 @@ mod tests {
             board.cells[y][2] = Some(player_color(0)); // x=2 はブロック壁
         }
         // x=1 は y=0,1 が空洞（深さ4の縦穴）
-        assert!(board.is_unreachable_alcove(0, 0), "x=0, y=0 should be detected as unreachable alcove");
+        assert!(
+            board.is_unreachable_alcove(0, 0),
+            "x=0, y=0 should be detected as unreachable alcove"
+        );
 
         let signals = crate::game::LaneSignalBoard::default();
         // ここで I字（Straight）を落とす際、横のどうしようもない空洞 (0,0) を気にして縦穴埋めを躊躇するのではなく、
         // 縦向き (rot=1) で x=1 の縦穴を埋めることを優先する
-        let best_move = AutoAi::find_best_move(&board, 0, &TrominoKind::Straight, &[], &[], &signals)
-            .expect("Move found for Straight");
+        let best_move =
+            AutoAi::find_best_move(&board, 0, &TrominoKind::Straight, &[], &[], &signals)
+                .expect("Move found for Straight");
 
         assert_eq!(best_move.rotation % 2, 1, "Should choose vertical Straight");
-        assert_eq!(best_move.target_x, 1, "Should fill the vertical well at x=1");
+        assert_eq!(
+            best_move.target_x, 1,
+            "Should fill the vertical well at x=1"
+        );
     }
 
     #[test]
@@ -358,10 +412,14 @@ mod tests {
             &[],
             &[],
             &signals,
-        ).expect("Replanned move found");
+        )
+        .expect("Replanned move found");
 
         // 埋まってしまった (x=0, y=0) への衝突を避け、安全な別の着地点（例えば x=1 や x=2 など）へ目標変更すること
         let collides_with_obstacle = re_eval.target_x == 0 && re_eval.landing_y == 0;
-        assert!(!collides_with_obstacle, "AI must replan to a safe target avoiding the unexpected obstacle");
+        assert!(
+            !collides_with_obstacle,
+            "AI must replan to a safe target avoiding the unexpected obstacle"
+        );
     }
 }

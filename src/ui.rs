@@ -1,7 +1,7 @@
-use bevy::prelude::*;
-use crate::board::{lane_x_range, GlobalBoard};
+use crate::board::{GlobalBoard, lane_x_range};
 use crate::config::*;
 use crate::game::*;
+use bevy::prelude::*;
 
 #[derive(Component)]
 pub struct LaneLabel {
