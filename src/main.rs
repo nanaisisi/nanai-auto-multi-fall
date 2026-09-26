@@ -50,6 +50,13 @@ fn main() {
             )
                 .chain(),
         )
-        .add_systems(PostUpdate, (render::render_system, ui::update_ui_system))
+        .add_systems(
+            PostUpdate,
+            (
+                render::render_system,
+                ui::update_ui_system,
+                ui::exit_button_interaction_system,
+            ),
+        )
         .run();
 }
