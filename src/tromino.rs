@@ -24,6 +24,14 @@ impl TrominoKind {
         }
     }
 
+    /// スポーン時の初期回転状態を取得
+    pub fn initial_rotation(&self) -> usize {
+        match self {
+            TrominoKind::Straight => 1,
+            TrominoKind::Corner => 0,
+        }
+    }
+
     /// (dx, dy) の相対セルオフセット (原点 (0,0) を基準とする)
     /// x: 0..width, y: 0..height
     pub fn cell_offsets(&self, rotation: usize) -> Vec<(i32, i32)> {

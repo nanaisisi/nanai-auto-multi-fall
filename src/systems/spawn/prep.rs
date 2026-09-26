@@ -1,6 +1,6 @@
 use crate::ai::PredictedPlacement;
 use crate::config::GameSettings;
-use crate::game::{FallingTromino, LanePace};
+use crate::game::FallingTromino;
 use bevy::prelude::*;
 
 /// 落下中トミノの残り着地予想時間 (ETA) を計算し、ETA順にソートされた着地予測リストを生成
@@ -15,11 +15,9 @@ pub fn collect_sorted_predictions(
         .iter()
         .map(|falling| {
             let dy = (falling.current_y - falling.landing_y as f32).max(0.0);
-            let interval = match falling.pace {
-                LanePace::SoftDrop => base_interval * settings.soft_drop_multiplier,
-                LanePace::Normal => base_interval,
-            };
+            let interval = settings.calculate_fall_interval(base_interval, falling.pace);
             let eta = dy * interval;
+
             (
                 eta,
                 PredictedPlacement {

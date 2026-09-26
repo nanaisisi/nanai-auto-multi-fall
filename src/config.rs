@@ -79,4 +79,12 @@ impl GameSettings {
         let speedup = lines_cleared as f32 * 0.0031;
         (self.initial_fall_interval - speedup).max(self.min_fall_interval)
     }
+
+    /// ベース落下間隔とレーンのペース（Normal / SoftDrop）から実際の落下間隔を算出
+    pub fn calculate_fall_interval(&self, base_interval: f32, pace: crate::game::LanePace) -> f32 {
+        match pace {
+            crate::game::LanePace::SoftDrop => base_interval * self.soft_drop_multiplier,
+            crate::game::LanePace::Normal => base_interval,
+        }
+    }
 }

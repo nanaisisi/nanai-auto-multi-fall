@@ -7,9 +7,7 @@ pub use stuck::{LaneStuckContext, handle_lane_stuck};
 use crate::ai::{AutoAi, PredictedPlacement};
 use crate::board::GlobalBoard;
 use crate::config::GameSettings;
-use crate::game::{
-    FallingTromino, GameLogger, LanePace, LaneSignalBoard, LaneSlot, LaneSpawnCooldown,
-};
+use crate::game::{FallingTromino, GameLogger, LaneSignalBoard, LaneSlot, LaneSpawnCooldown};
 use crate::tromino::TrominoKind;
 use bevy::prelude::*;
 use bevy_prng::WyRand;
@@ -58,11 +56,7 @@ pub fn spawn_tromino_system(
         let (start_x, start_y) = GlobalBoard::lane_spawn_origin(lane.id);
 
         let kind = TrominoKind::random_from_rng(&mut rng);
-
-        let initial_rotation = match kind {
-            TrominoKind::Straight => 1,
-            TrominoKind::Corner => 0,
-        };
+        let initial_rotation = kind.initial_rotation();
 
         let can_enter_spawn =
             board.can_place(&kind, initial_rotation, start_x as i32, start_y as i32);
@@ -106,10 +100,7 @@ pub fn spawn_tromino_system(
                 });
 
                 let lane_pace = m.pace;
-                let fall_interval = match lane_pace {
-                    LanePace::SoftDrop => base_interval * settings.soft_drop_multiplier,
-                    LanePace::Normal => base_interval,
-                };
+                let fall_interval = settings.calculate_fall_interval(base_interval, lane_pace);
 
                 commands.spawn(FallingTromino::new_spawned(
                     lane.id,
