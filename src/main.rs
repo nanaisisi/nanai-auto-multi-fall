@@ -21,6 +21,7 @@ fn main() {
         .init_resource::<board::GlobalBoard>()
         .init_resource::<game::LaneSignalBoard>()
         .init_resource::<game::GameLogger>()
+        .init_resource::<ui::ExitDialogState>()
         .add_plugins(EntropyPlugin::<WyRand>::default())
         .add_plugins(
             DefaultPlugins
@@ -55,7 +56,7 @@ fn main() {
             (
                 render::render_system,
                 ui::update_ui_system,
-                ui::exit_button_interaction_system,
+                ui::exit_dialog_interaction_system,
             ),
         )
         .run();

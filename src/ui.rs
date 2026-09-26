@@ -8,11 +8,22 @@ pub struct LaneLabel {
     pub lane_id: usize,
 }
 
-#[derive(Component)]
-pub struct ExitButton;
+#[derive(Resource, Default)]
+pub struct ExitDialogState {
+    pub is_open: bool,
+}
 
 #[derive(Component)]
-pub struct GameOverExitBanner;
+pub struct OpenExitDialogButton;
+
+#[derive(Component)]
+pub struct ConfirmExitButton;
+
+#[derive(Component)]
+pub struct CancelExitButton;
+
+#[derive(Component)]
+pub struct ExitConfirmModal;
 
 pub fn setup_ui(mut commands: Commands) {
     let total_pixel_h = LANE_HEIGHT as f32 * (CELL_SIZE + CELL_GAP) - CELL_GAP;
@@ -52,7 +63,7 @@ pub fn setup_ui(mut commands: Commands) {
         TotalScoreText,
     ));
 
-    // 右上（常時・プレイ途中）の「終了」ボタン
+    // 右上（常時・プレイ途中および終了後）の「終了」ボタン（盤面を遮らない配置）
     commands
         .spawn((Node {
             position_type: PositionType::Absolute,
@@ -65,8 +76,8 @@ pub fn setup_ui(mut commands: Commands) {
                 .spawn((
                     Button,
                     Node {
-                        width: Val::Px(90.0),
-                        height: Val::Px(36.0),
+                        width: Val::Px(96.0),
+                        height: Val::Px(34.0),
                         border: UiRect::all(Val::Px(1.5)),
                         justify_content: JustifyContent::Center,
                         align_items: AlignItems::Center,
@@ -75,7 +86,7 @@ pub fn setup_ui(mut commands: Commands) {
                     },
                     BorderColor::all(Color::srgb(0.5, 0.2, 0.25)),
                     BackgroundColor(Color::srgba(0.2, 0.08, 0.1, 0.85)),
-                    ExitButton,
+                    OpenExitDialogButton,
                 ))
                 .with_children(|btn| {
                     btn.spawn((
@@ -89,7 +100,8 @@ pub fn setup_ui(mut commands: Commands) {
                 });
         });
 
-    // ゲームオーバー時用の中央大型終了バナー（初期状態は非表示）
+    // 終了確認モーダルダイアログ（初期状態は非表示）
+    // 盤面が確認できるように半透明バックドロップを採用
     commands
         .spawn((
             Node {
@@ -103,7 +115,8 @@ pub fn setup_ui(mut commands: Commands) {
                 display: Display::None,
                 ..default()
             },
-            GameOverExitBanner,
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.55)),
+            ExitConfirmModal,
         ))
         .with_children(|parent| {
             parent
@@ -111,49 +124,95 @@ pub fn setup_ui(mut commands: Commands) {
                     Node {
                         flex_direction: FlexDirection::Column,
                         align_items: AlignItems::Center,
-                        padding: UiRect::all(Val::Px(24.0)),
-                        border: UiRect::all(Val::Px(2.0)),
-                        border_radius: BorderRadius::all(Val::Px(12.0)),
+                        padding: UiRect::axes(Val::Px(32.0), Val::Px(24.0)),
+                        border: UiRect::all(Val::Px(1.5)),
+                        border_radius: BorderRadius::all(Val::Px(10.0)),
                         row_gap: Val::Px(16.0),
                         ..default()
                     },
-                    BackgroundColor(Color::srgba(0.08, 0.09, 0.14, 0.94)),
-                    BorderColor::all(Color::srgb(0.85, 0.25, 0.3)),
+                    BackgroundColor(Color::srgba(0.08, 0.10, 0.15, 0.95)),
+                    BorderColor::all(Color::srgb(0.7, 0.3, 0.35)),
                 ))
                 .with_children(|panel| {
                     panel.spawn((
-                        Text::new("--- GAME OVER ---"),
+                        Text::new("[ 一時停止中 ]"),
                         TextFont {
-                            font_size: bevy::text::FontSize::Px(24.0),
+                            font_size: bevy::text::FontSize::Px(14.0),
                             ..default()
                         },
-                        TextColor(Color::srgb(1.0, 0.3, 0.3)),
+                        TextColor(Color::srgb(1.0, 0.8, 0.4)),
                     ));
+                    panel.spawn((
+                        Text::new("ゲームを終了しますか？"),
+                        TextFont {
+                            font_size: bevy::text::FontSize::Px(18.0),
+                            ..default()
+                        },
+                        TextColor(Color::WHITE),
+                    ));
+
+                    // 確認ボタン行（終了する / 続ける）
                     panel
-                        .spawn((
-                            Button,
-                            Node {
-                                width: Val::Px(180.0),
-                                height: Val::Px(44.0),
-                                border: UiRect::all(Val::Px(1.5)),
-                                justify_content: JustifyContent::Center,
-                                align_items: AlignItems::Center,
-                                border_radius: BorderRadius::all(Val::Px(8.0)),
-                                ..default()
-                            },
-                            BorderColor::all(Color::srgb(0.9, 0.3, 0.35)),
-                            BackgroundColor(Color::srgba(0.4, 0.12, 0.15, 0.9)),
-                            ExitButton,
-                        ))
-                        .with_children(|btn| {
-                            btn.spawn((
-                                Text::new("ウインドウを閉じる"),
-                                TextFont {
-                                    font_size: bevy::text::FontSize::Px(15.0),
+                        .spawn((Node {
+                            flex_direction: FlexDirection::Row,
+                            column_gap: Val::Px(16.0),
+                            margin: UiRect::top(Val::Px(8.0)),
+                            ..default()
+                        },))
+                        .with_children(|row| {
+                            // 本当に終了するボタン
+                            row.spawn((
+                                Button,
+                                Node {
+                                    width: Val::Px(110.0),
+                                    height: Val::Px(36.0),
+                                    border: UiRect::all(Val::Px(1.5)),
+                                    justify_content: JustifyContent::Center,
+                                    align_items: AlignItems::Center,
+                                    border_radius: BorderRadius::all(Val::Px(6.0)),
                                     ..default()
                                 },
-                                TextColor(Color::WHITE),
-                            ));
+                                BorderColor::all(Color::srgb(0.9, 0.3, 0.35)),
+                                BackgroundColor(Color::srgba(0.45, 0.12, 0.16, 0.95)),
+                                ConfirmExitButton,
+                            ))
+                            .with_children(|btn| {
+                                btn.spawn((
+                                    Text::new("終了する"),
+                                    TextFont {
+                                        font_size: bevy::text::FontSize::Px(14.0),
+                                        ..default()
+                                    },
+                                    TextColor(Color::WHITE),
+                                ));
+                            });
+
+                            // キャンセルボタン（続ける）
+                            row.spawn((
+                                Button,
+                                Node {
+                                    width: Val::Px(110.0),
+                                    height: Val::Px(36.0),
+                                    border: UiRect::all(Val::Px(1.5)),
+                                    justify_content: JustifyContent::Center,
+                                    align_items: AlignItems::Center,
+                                    border_radius: BorderRadius::all(Val::Px(6.0)),
+                                    ..default()
+                                },
+                                BorderColor::all(Color::srgb(0.35, 0.4, 0.5)),
+                                BackgroundColor(Color::srgba(0.18, 0.22, 0.28, 0.9)),
+                                CancelExitButton,
+                            ))
+                            .with_children(|btn| {
+                                btn.spawn((
+                                    Text::new("続ける"),
+                                    TextFont {
+                                        font_size: bevy::text::FontSize::Px(14.0),
+                                        ..default()
+                                    },
+                                    TextColor(Color::srgb(0.85, 0.9, 0.95)),
+                                ));
+                            });
                         });
                 });
         });
@@ -164,7 +223,6 @@ pub fn update_ui_system(
     settings: Res<GameSettings>,
     mut total_text_query: Query<&mut Text2d, (With<TotalScoreText>, Without<LaneLabel>)>,
     mut lane_label_query: Query<(&LaneLabel, &mut Text2d, &mut TextColor), Without<TotalScoreText>>,
-    mut game_over_banner_query: Query<&mut Node, With<GameOverExitBanner>>,
 ) {
     for (lane_label, mut text, mut text_color) in lane_label_query.iter_mut() {
         let is_stuck = board.lane_stuck[lane_label.lane_id];
@@ -201,20 +259,9 @@ pub fn update_ui_system(
             }
         }
     }
-
-    // ゲームオーバー時に大型終了バナーを表示
-    for mut node in game_over_banner_query.iter_mut() {
-        if board.game_over {
-            if node.display != Display::Flex {
-                node.display = Display::Flex;
-            }
-        } else if node.display != Display::None {
-            node.display = Display::None;
-        }
-    }
 }
 
-type ExitButtonInteractionQuery<'w, 's> = Query<
+type OpenDialogQuery<'w, 's> = Query<
     'w,
     's,
     (
@@ -222,27 +269,55 @@ type ExitButtonInteractionQuery<'w, 's> = Query<
         &'static mut BackgroundColor,
         &'static mut BorderColor,
     ),
-    (Changed<Interaction>, With<ExitButton>),
+    (Changed<Interaction>, With<OpenExitDialogButton>),
 >;
 
-/// 終了ボタン押下およびEscキー/Qキー入力によるウィンドウ終了処理
-pub fn exit_button_interaction_system(
+type ConfirmExitQuery<'w, 's> = Query<
+    'w,
+    's,
+    (&'static Interaction, &'static mut BackgroundColor),
+    (Changed<Interaction>, With<ConfirmExitButton>),
+>;
+
+type CancelExitQuery<'w, 's> = Query<
+    'w,
+    's,
+    (&'static Interaction, &'static mut BackgroundColor),
+    (Changed<Interaction>, With<CancelExitButton>),
+>;
+
+/// 終了ボタン、確認モーダル、およびゲーム一時停止（Time<Virtual>）の連動システム
+#[allow(clippy::too_many_arguments)]
+pub fn exit_dialog_interaction_system(
     mut exit_events: MessageWriter<AppExit>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut interaction_query: ExitButtonInteractionQuery,
+    mut time: ResMut<Time<Virtual>>,
+    mut dialog_state: ResMut<ExitDialogState>,
+    mut modal_query: Query<&mut Node, With<ExitConfirmModal>>,
+    mut open_btn_query: OpenDialogQuery,
+    mut confirm_btn_query: ConfirmExitQuery,
+    mut cancel_btn_query: CancelExitQuery,
 ) {
-    // 1. キーボードショートカット（Esc または Q）での終了
-    if keyboard_input.just_pressed(KeyCode::Escape) || keyboard_input.just_pressed(KeyCode::KeyQ) {
-        exit_events.write(AppExit::Success);
-        return;
+    let mut should_open = false;
+    let mut should_close = false;
+    let mut should_exit = false;
+
+    // 1. キーボード操作
+    if keyboard_input.just_pressed(KeyCode::Escape) {
+        if dialog_state.is_open {
+            should_close = true;
+        } else {
+            should_open = true;
+        }
+    } else if keyboard_input.just_pressed(KeyCode::KeyQ) {
+        should_open = true;
     }
 
-    // 2. ボタン操作（Hover/Click）での終了
-    for (interaction, mut bg_color, mut border_color) in interaction_query.iter_mut() {
+    // 2. 右上終了ボタン押下
+    for (interaction, mut bg_color, mut border_color) in open_btn_query.iter_mut() {
         match *interaction {
             Interaction::Pressed => {
-                *bg_color = BackgroundColor(Color::srgb(0.8, 0.1, 0.15));
-                exit_events.write(AppExit::Success);
+                should_open = true;
             }
             Interaction::Hovered => {
                 *bg_color = BackgroundColor(Color::srgba(0.35, 0.1, 0.15, 0.95));
@@ -252,6 +327,61 @@ pub fn exit_button_interaction_system(
                 *bg_color = BackgroundColor(Color::srgba(0.2, 0.08, 0.1, 0.85));
                 *border_color = BorderColor::all(Color::srgb(0.5, 0.2, 0.25));
             }
+        }
+    }
+
+    // 3. モーダル内の「終了する」ボタン
+    for (interaction, mut bg_color) in confirm_btn_query.iter_mut() {
+        match *interaction {
+            Interaction::Pressed => {
+                should_exit = true;
+            }
+            Interaction::Hovered => {
+                *bg_color = BackgroundColor(Color::srgba(0.65, 0.15, 0.2, 0.98));
+            }
+            Interaction::None => {
+                *bg_color = BackgroundColor(Color::srgba(0.45, 0.12, 0.16, 0.95));
+            }
+        }
+    }
+
+    // 4. モーダル内の「続ける」ボタン
+    for (interaction, mut bg_color) in cancel_btn_query.iter_mut() {
+        match *interaction {
+            Interaction::Pressed => {
+                should_close = true;
+            }
+            Interaction::Hovered => {
+                *bg_color = BackgroundColor(Color::srgba(0.28, 0.34, 0.42, 0.95));
+            }
+            Interaction::None => {
+                *bg_color = BackgroundColor(Color::srgba(0.18, 0.22, 0.28, 0.9));
+            }
+        }
+    }
+
+    if should_exit {
+        exit_events.write(AppExit::Success);
+        return;
+    }
+
+    if should_open && !dialog_state.is_open {
+        dialog_state.is_open = true;
+        time.pause();
+    } else if should_close && dialog_state.is_open {
+        dialog_state.is_open = false;
+        time.unpause();
+    }
+
+    // モーダルの表示/非表示を更新
+    for mut node in modal_query.iter_mut() {
+        let target_display = if dialog_state.is_open {
+            Display::Flex
+        } else {
+            Display::None
+        };
+        if node.display != target_display {
+            node.display = target_display;
         }
     }
 }
