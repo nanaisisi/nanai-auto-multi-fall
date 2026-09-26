@@ -6,32 +6,37 @@ use bevy::prelude::*;
 /// スタック発生時のリトライ・クールダウン間隔（秒）
 const STUCK_RETRY_INTERVAL_SECS: f32 = 0.25;
 
+/// レーンスタック発生時のコンテキスト情報
+pub struct LaneStuckContext {
+    pub lane_entity: Entity,
+    pub lane_id: usize,
+    pub kind: TrominoKind,
+    pub can_enter_spawn: bool,
+}
+
 /// 投入口詰まりや配置候補なし時のスタック判定およびゲームオーバー判定・ログ出力
 pub fn handle_lane_stuck(
     commands: &mut Commands,
     board: &mut GlobalBoard,
-    lane_entity: Entity,
-    lane_id: usize,
-    kind: TrominoKind,
-    can_enter_spawn: bool,
+    ctx: LaneStuckContext,
     logger: &mut GameLogger,
 ) {
     let heights = board.column_heights();
     let max_h = heights.iter().max().copied().unwrap_or(0);
     let holes = board.count_holes();
-    let (lane_min_x, lane_max_x) = lane_x_range(lane_id);
+    let (lane_min_x, lane_max_x) = lane_x_range(ctx.lane_id);
     let lane_max_h = heights[lane_min_x..=lane_max_x]
         .iter()
         .max()
         .copied()
         .unwrap_or(0);
 
-    board.lane_stuck[lane_id] = true;
+    let is_game_over = board.mark_lane_stuck(ctx.lane_id);
 
-    let stuck_msg = if !can_enter_spawn {
+    let stuck_msg = if !ctx.can_enter_spawn {
         format!(
             "[LANE STUCK] Lane {} entrance blocked! (LaneMaxH: {}, GlobalMaxH: {}, Holes: {})",
-            lane_id + 1,
+            ctx.lane_id + 1,
             lane_max_h,
             max_h,
             holes
@@ -39,8 +44,8 @@ pub fn handle_lane_stuck(
     } else {
         format!(
             "[LANE STUCK] Lane {} no valid path/placement found for {:?} (LaneMaxH: {}, Holes: {})",
-            lane_id + 1,
-            kind,
+            ctx.lane_id + 1,
+            ctx.kind,
             lane_max_h,
             holes
         )
@@ -48,8 +53,7 @@ pub fn handle_lane_stuck(
     warn!("{}", stuck_msg);
     logger.log(&stuck_msg);
 
-    if board.lane_stuck.iter().all(|&stuck| stuck) {
-        board.game_over = true;
+    if is_game_over {
         let game_over_msg = format!(
             "[GAME OVER] All lanes stuck! Final Lines: {}, Score: {}, Holes: {}, MaxH: {}",
             board.lines_cleared, board.score, holes, max_h
@@ -60,7 +64,7 @@ pub fn handle_lane_stuck(
 
     logger.log_raw(&board.render_ascii());
 
-    commands.entity(lane_entity).insert(LaneSpawnCooldown {
+    commands.entity(ctx.lane_entity).insert(LaneSpawnCooldown {
         timer: Timer::from_seconds(STUCK_RETRY_INTERVAL_SECS, TimerMode::Once),
     });
 }

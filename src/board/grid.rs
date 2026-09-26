@@ -33,4 +33,15 @@ impl GlobalBoard {
         self.game_over = false;
         self.lane_stuck = [false; crate::config::LANE_COUNT];
     }
+
+    /// 指定レーンをスタック状態にし、全レーンがスタックした場合はゲームオーバーフラグを立てる。
+    /// 全レーンがスタックしたかどうか（ゲームオーバーになったか）を返す。
+    pub fn mark_lane_stuck(&mut self, lane_id: usize) -> bool {
+        self.lane_stuck[lane_id] = true;
+        let all_stuck = self.lane_stuck.iter().all(|&stuck| stuck);
+        if all_stuck {
+            self.game_over = true;
+        }
+        all_stuck
+    }
 }

@@ -2,7 +2,7 @@ pub mod prep;
 pub mod stuck;
 
 pub use prep::{collect_air_obstacles, collect_sorted_predictions};
-pub use stuck::handle_lane_stuck;
+pub use stuck::{LaneStuckContext, handle_lane_stuck};
 
 use crate::ai::{AutoAi, PredictedPlacement};
 use crate::board::GlobalBoard;
@@ -130,10 +130,12 @@ pub fn spawn_tromino_system(
                 handle_lane_stuck(
                     &mut commands,
                     &mut board,
-                    lane_entity,
-                    lane.id,
-                    kind,
-                    can_enter_spawn,
+                    LaneStuckContext {
+                        lane_entity,
+                        lane_id: lane.id,
+                        kind,
+                        can_enter_spawn,
+                    },
                     &mut logger,
                 );
             }
