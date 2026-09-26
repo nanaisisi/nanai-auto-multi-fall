@@ -59,10 +59,7 @@ impl GlobalBoard {
         }
 
         if top_overflow {
-            self.lane_stuck[player_id % crate::config::LANE_COUNT] = true;
-            if self.lane_stuck.iter().all(|&stuck| stuck) {
-                self.game_over = true;
-            }
+            self.mark_lane_stuck(player_id % crate::config::LANE_COUNT);
             return false;
         }
 

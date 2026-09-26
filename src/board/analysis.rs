@@ -125,10 +125,13 @@ impl GlobalBoard {
         deepest_hole
     }
 
-    /// レーン内の深さ2以上の縦穴（左右が壁やブロックで囲まれ、上方が空いている溝）を検出
+    /// 指定された X 範囲 (min_x..=max_x) における深さ2以上の縦穴（左右が壁やブロックで囲まれ、上方が空いている溝）を検出
     /// 戻り値: (x座標, 穴の底y座標, 穴の深さ)
-    pub fn find_lane_vertical_wells(&self, lane_id: usize) -> Vec<(usize, usize, usize)> {
-        let (min_x, max_x) = lane_x_range(lane_id);
+    pub fn find_vertical_wells_in_x_range(
+        &self,
+        min_x: usize,
+        max_x: usize,
+    ) -> Vec<(usize, usize, usize)> {
         let heights = self.column_heights();
         let mut wells = Vec::new();
 
@@ -158,35 +161,16 @@ impl GlobalBoard {
         wells
     }
 
+    /// レーン内の深さ2以上の縦穴（左右が壁やブロックで囲まれ、上方が空いている溝）を検出
+    /// 戻り値: (x座標, 穴の底y座標, 穴の深さ)
+    pub fn find_lane_vertical_wells(&self, lane_id: usize) -> Vec<(usize, usize, usize)> {
+        let (min_x, max_x) = lane_x_range(lane_id);
+        self.find_vertical_wells_in_x_range(min_x, max_x)
+    }
+
     /// フィールド全体における深さ2以上の縦穴をすべて検出
     pub fn find_all_vertical_wells(&self) -> Vec<(usize, usize, usize)> {
-        let heights = self.column_heights();
-        let mut wells = Vec::new();
-
-        for x in 0..TOTAL_GRID_WIDTH {
-            let h = heights[x];
-            if h >= LANE_HEIGHT {
-                continue;
-            }
-
-            let left_h = if x == 0 { LANE_HEIGHT } else { heights[x - 1] };
-            let right_h = if x + 1 >= TOTAL_GRID_WIDTH {
-                LANE_HEIGHT
-            } else {
-                heights[x + 1]
-            };
-
-            let wall_h = left_h.min(right_h);
-            if wall_h >= h + 2 {
-                let depth = wall_h - h;
-                let has_roof = (h..LANE_HEIGHT).any(|y| self.cells[y][x].is_some());
-                if !has_roof {
-                    wells.push((x, h, depth));
-                }
-            }
-        }
-
-        wells
+        self.find_vertical_wells_in_x_range(0, TOTAL_GRID_WIDTH - 1)
     }
 
     /// 指定された空洞マス (cx, cy) が埋めることの不可能な空間かを判定
