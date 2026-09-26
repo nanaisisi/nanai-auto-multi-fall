@@ -36,9 +36,11 @@ pub fn collect_sorted_predictions<'a>(
 }
 
 /// 落下中トミノが空中で占有しているセル座標（動的空中障害物）を収集
-pub fn collect_air_obstacles(falling_query: &Query<&FallingTromino>) -> Vec<(i32, i32)> {
-    falling_query
-        .iter()
+pub fn collect_air_obstacles<'a>(
+    fallings: impl IntoIterator<Item = &'a FallingTromino>,
+) -> Vec<(i32, i32)> {
+    fallings
+        .into_iter()
         .flat_map(|falling| falling.occupied_cells())
         .collect()
 }

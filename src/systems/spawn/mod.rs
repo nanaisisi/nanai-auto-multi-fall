@@ -37,7 +37,7 @@ pub fn spawn_tromino_system(
     let base_interval = settings.current_base_fall_interval(board.lines_cleared);
     let mut predicted_others =
         collect_sorted_predictions(falling_query, &settings, board.lines_cleared);
-    let air_obstacles = collect_air_obstacles(&falling_query);
+    let air_obstacles = collect_air_obstacles(falling_query);
 
     for (lane_entity, lane, cooldown_opt) in lane_query.iter_mut() {
         let has_active = falling_query.iter().any(|f| f.lane_id == lane.id);
