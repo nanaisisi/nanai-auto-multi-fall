@@ -21,8 +21,8 @@ fn main() {
         .init_resource::<board::GlobalBoard>()
         .init_resource::<game::LaneSignalBoard>()
         .init_resource::<game::GameLogger>()
-        .init_resource::<ui::ExitDialogState>()
         .add_plugins(EntropyPlugin::<WyRand>::default())
+        .add_plugins(ui::UiPlugin)
         .add_plugins(
             DefaultPlugins
                 .set(WindowPlugin {
@@ -41,7 +41,7 @@ fn main() {
                     ..default()
                 }),
         )
-        .add_systems(Startup, (setup::setup_game, ui::setup_ui))
+        .add_systems(Startup, setup::setup_game)
         .add_systems(
             Update,
             (
@@ -51,13 +51,6 @@ fn main() {
             )
                 .chain(),
         )
-        .add_systems(
-            PostUpdate,
-            (
-                render::render_system,
-                ui::update_ui_system,
-                ui::exit_dialog_interaction_system,
-            ),
-        )
+        .add_systems(PostUpdate, render::render_system)
         .run();
 }
