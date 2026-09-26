@@ -68,6 +68,17 @@ impl FallingTromino {
             replan_timer: Timer::from_seconds(0.60, TimerMode::Repeating),
         }
     }
+
+    /// 現在のトミノが空中で占有しているセル座標（整数グリッド座標）のリストを計算
+    pub fn occupied_cells(&self) -> Vec<(i32, i32)> {
+        let base_x = self.current_x.round() as i32;
+        let base_y = self.current_y.round() as i32;
+        self.kind
+            .cell_offsets(self.current_rotation)
+            .into_iter()
+            .map(|(dx, dy)| (base_x + dx, base_y + dy))
+            .collect()
+    }
 }
 
 #[derive(Component)]

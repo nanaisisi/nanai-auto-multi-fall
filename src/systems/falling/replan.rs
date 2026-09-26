@@ -1,7 +1,7 @@
 use crate::ai::{AutoAi, PredictedPlacement};
 use crate::board::GlobalBoard;
 use crate::config::GameSettings;
-use crate::game::{FallingTromino, GameLogger, LanePace, LaneSignalBoard};
+use crate::game::{FallingTromino, GameLogger, LaneSignalBoard};
 use bevy::prelude::*;
 
 /// トミノ落下中の目標再計算（Dynamic Re-planning）
@@ -77,10 +77,7 @@ pub fn update_replan_if_needed(
             falling.pace = re_eval.pace;
             falling.planned_board_version = board.board_version;
 
-            let fall_interval = match falling.pace {
-                LanePace::SoftDrop => base_interval * settings.soft_drop_multiplier,
-                LanePace::Normal => base_interval,
-            };
+            let fall_interval = settings.calculate_fall_interval(base_interval, falling.pace);
             falling
                 .fall_timer
                 .set_duration(std::time::Duration::from_secs_f32(fall_interval));

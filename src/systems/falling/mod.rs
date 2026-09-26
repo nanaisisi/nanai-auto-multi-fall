@@ -6,10 +6,9 @@ pub use collision::{check_position_collision, try_rotate_with_kick};
 pub use lock::handle_lock_process;
 pub use replan::update_replan_if_needed;
 
-use crate::ai::PredictedPlacement;
 use crate::board::{GlobalBoard, lane_x_range};
 use crate::config::{GameSettings, SPAWN_WALL_MIN_Y};
-use crate::game::{FallingTromino, GameLogger, LanePace, LaneSignalBoard, LaneSlot};
+use crate::game::{FallingTromino, GameLogger, LaneSignalBoard, LaneSlot};
 use bevy::prelude::*;
 
 /// 落下・移動処理システム（移動・回転の完全衝突判定付き）
@@ -29,53 +28,23 @@ pub fn falling_tromino_system(
     // 各落下中トミノの現在の占有セルリスト（整数座標）
     let current_falling: Vec<(Entity, Vec<(i32, i32)>)> = falling_query
         .iter()
-        .map(|(entity, falling)| {
-            let offsets = falling.kind.cell_offsets(falling.current_rotation);
-            let cells = offsets
-                .iter()
-                .map(|(dx, dy)| {
-                    (
-                        falling.current_x.round() as i32 + dx,
-                        falling.current_y.round() as i32 + dy,
-                    )
-                })
-                .collect();
-            (entity, cells)
-        })
+        .map(|(entity, falling)| (entity, falling.occupied_cells()))
         .collect();
 
     // 空中の他トミノのセル（動的障害物）
     let all_air_obstacles: Vec<(i32, i32)> = current_falling
         .iter()
-        .flat_map(|(_, cells)| cells.clone())
+        .flat_map(|(_, cells)| cells.iter().copied())
         .collect();
 
     // 他トミノの着地予測リスト（落下順/ETA順にソート）
-    let base_interval = settings.current_base_fall_interval(board.lines_cleared);
-    let mut other_etas: Vec<(f32, PredictedPlacement)> = falling_query
-        .iter()
-        .map(|(_ent, f)| {
-            let dy = (f.current_y - f.landing_y as f32).max(0.0);
-            let interval = match f.pace {
-                LanePace::SoftDrop => base_interval * settings.soft_drop_multiplier,
-                LanePace::Normal => base_interval,
-            };
-            (
-                dy * interval,
-                PredictedPlacement {
-                    player_id: f.lane_id,
-                    kind: f.kind,
-                    rotation: f.target_rotation,
-                    target_x: f.target_x,
-                    landing_y: f.landing_y,
-                },
-            )
-        })
-        .collect();
+    let all_predicted_others = crate::systems::spawn::collect_sorted_predictions(
+        falling_query.iter().map(|(_, f)| f),
+        &settings,
+        board.lines_cleared,
+    );
 
-    other_etas.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-    let all_predicted_others: Vec<PredictedPlacement> =
-        other_etas.into_iter().map(|(_, p)| p).collect();
+    let base_interval = settings.current_base_fall_interval(board.lines_cleared);
 
     for (tromino_entity, mut falling) in falling_query.iter_mut() {
         let current_int_y = falling.current_y.round() as i32;
