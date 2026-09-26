@@ -22,6 +22,8 @@ fn test_predictive_cooperative_ai_completes_joint_line() {
 
     let signals = crate::game::LaneSignalBoard::default();
     println!("DEBUG: running find_best_move");
+    let candidates = crate::ai::search::candidates::generate_spawn_candidates(0, &kind);
+    println!("candidates count = {}", candidates.len());
     let best_move = AutoAi::find_best_move(&board, 0, &kind, &predicted_others, &[], &signals)
         .expect("Move found");
     println!("DEBUG: best_move = {:?}", best_move);

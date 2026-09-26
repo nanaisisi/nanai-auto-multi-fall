@@ -77,6 +77,13 @@ pub fn find_best_spawn_move(
                 signals,
             );
 
+            if x == 0 {
+                println!(
+                    "DEBUG cand: rot={}, landing_y={}, score={}, lines={}, holes={}",
+                    rot, landing_y, eval_score, breakdown.lines, breakdown.holes_penalty
+                );
+            }
+
             Some(MoveEvaluation {
                 rotation: rot,
                 target_x: x,
